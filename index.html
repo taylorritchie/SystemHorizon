@@ -184,9 +184,6 @@ const QL = [{
   u: "https://make.powerapps.com"
 }];
 // ── Shelter Occupancy Config ──────────────────────────────────────
-// Paste your Power Automate HTTP trigger URL below to get live occupancy data.
-// Leave empty to show "Not connected" on the dashboard.
-const SHELTER_FLOW_URL = "https://97e0d8077ee9e7a9bd07a059b55fe6.17.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/3c627993efd342a3894142f378c151f0/triggers/manual/paths/invoke?api-version=1";
 const SHELTER_CAPACITY = { men: 16, women: 12 };
 
 const SURL = "https://qzliydcrlhioradwacmd.supabase.co";
@@ -2056,9 +2053,8 @@ function HomeView({
   });
   const groups = Object.entries(byCat).sort((a, b) => b[1].length - a[1].length).slice(0, 5);
   const tp = painLog.find(e => e.date === tds());
-  const shelterConnected = !!SHELTER_FLOW_URL;
-  const menV = shelterConnected ? (shelter.loaded ? (shelter.error ? "err" : shelter.men + "/" + SHELTER_CAPACITY.men) : "...") : "\u2013";
-  const womenV = shelterConnected ? (shelter.loaded ? (shelter.error ? "err" : shelter.women + "/" + SHELTER_CAPACITY.women) : "...") : "\u2013";
+  const menV = shelter.loaded ? (shelter.error ? "err" : shelter.men + "/" + SHELTER_CAPACITY.men) : "...";
+  const womenV = shelter.loaded ? (shelter.error ? "err" : shelter.women + "/" + SHELTER_CAPACITY.women) : "...";
   const menPct = shelter.loaded && !shelter.error ? shelter.men / SHELTER_CAPACITY.men : 0;
   const womenPct = shelter.loaded && !shelter.error ? shelter.women / SHELTER_CAPACITY.women : 0;
   const shelterColor = pct => pct >= 0.9 ? "#dc2626" : pct >= 0.7 ? "#d97706" : B;
@@ -3763,7 +3759,7 @@ function App() {
   const [view, setView] = useState("home");
   const [energy, setEnergy] = useState("all");
   useEffect(() => {
-    Promise.all([sGet('tasks'), sGet('projects'), sGet('pain_log'), sGet('calendar_events'), sGet('streak')]).then(([tr, pr, plr, evr, sr]) => {
+    Promise.all([sGet('tasks'), sGet('projects'), sGet('pain_log'), sGet('calendar_events'), sGet('streak'), sGet('shelter_occupancy')]).then(([tr, pr, plr, evr, sr, shr]) => {
       setTasks(tr.map(tFrR));
       setProjects(pr.map(pFrR));
       setPainLog(plr.map(plFrR));
@@ -3778,20 +3774,16 @@ function App() {
         lastDate: s.last_date,
         total: s.total || 0
       });
+      const sh0 = shr[0] || { men: 0, women: 0, unassigned: 0, updated_at: null };
+      setShelter({ men: sh0.men || 0, women: sh0.women || 0, unassigned: sh0.unassigned || 0, loaded: true, error: false, lastFetch: sh0.updated_at });
       setLoading(false);
     }).catch(e => { console.error('Load error:', e); setLoading(false); });
-    // Shelter occupancy from Power Automate flow
-    if (SHELTER_FLOW_URL) {
-      fetch(SHELTER_FLOW_URL).then(r => r.json()).then(d => {
-        setShelter({ men: d.men || 0, women: d.women || 0, unassigned: d.unassigned || 0, loaded: true, error: false, lastFetch: new Date().toISOString() });
-      }).catch(() => { setShelter(prev => ({ ...prev, loaded: true, error: true })); });
-    }
   }, []);
   const refreshShelter = () => {
-    if (!SHELTER_FLOW_URL) return;
     setShelter(prev => ({ ...prev, loaded: false, error: false }));
-    fetch(SHELTER_FLOW_URL).then(r => r.json()).then(d => {
-      setShelter({ men: d.men || 0, women: d.women || 0, unassigned: d.unassigned || 0, loaded: true, error: false, lastFetch: new Date().toISOString() });
+    sGet('shelter_occupancy').then(shr => {
+      const sh0 = shr[0] || { men: 0, women: 0, unassigned: 0, updated_at: null };
+      setShelter({ men: sh0.men || 0, women: sh0.women || 0, unassigned: sh0.unassigned || 0, loaded: true, error: false, lastFetch: sh0.updated_at });
     }).catch(() => { setShelter(prev => ({ ...prev, loaded: true, error: true })); });
   };
   const addTask = f => {
