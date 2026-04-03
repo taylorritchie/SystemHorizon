@@ -2028,7 +2028,9 @@ function HomeView({
   onDelete,
   onAdd,
   shelter,
-  onRefreshShelter
+  onRefreshShelter,
+  failedFlows,
+  onDismissFlow
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const todayT = tasks.filter(t => t.status === "Today");
@@ -2484,7 +2486,82 @@ function HomeView({
       background: B,
       opacity: 0.2 + i / Math.max(streak.count - 1, 1) * 0.8
     }
-  })))))), /*#__PURE__*/React.createElement("div", {
+  })))))), failedFlows.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#fef2f2",
+      padding: "12px 26px",
+      borderBottom: "1px solid #fecaca"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement(SL, {
+    color: "#dc2626"
+  }, "\u26A0 Failed Flows (", failedFlows.length, ")"), /*#__PURE__*/React.createElement("a", {
+    href: "https://make.powerautomate.com",
+    target: "_blank",
+    rel: "noopener",
+    style: {
+      fontSize: 11,
+      color: "#dc2626",
+      textDecoration: "none",
+      fontWeight: 500
+    }
+  }, "Open Power Automate \u2197")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, failedFlows.slice(0, 5).map(function(f) {
+    var ago = Math.round((Date.now() - new Date(f.started_at || f.created_at).getTime()) / 3600000);
+    var timeLabel = ago < 1 ? "< 1h ago" : ago < 24 ? ago + "h ago" : Math.round(ago / 24) + "d ago";
+    return /*#__PURE__*/React.createElement("div", {
+      key: f.id,
+      style: {
+        background: "#fff",
+        border: "0.5px solid #fca5a5",
+        borderRadius: 10,
+        padding: "7px 12px",
+        fontSize: 12,
+        color: "#991b1b",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        maxWidth: 320
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { flex: 1 }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 600, fontSize: 12, marginBottom: 2 }
+    }, f.flow_name || "Unknown Flow"), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 10, color: "#b91c1c", opacity: 0.7 }
+    }, timeLabel, f.error_message ? " \u2014 " + f.error_message.slice(0, 60) : "")), /*#__PURE__*/React.createElement("button", {
+      onClick: function() { onDismissFlow(f.id); },
+      title: "Dismiss",
+      style: {
+        background: "none",
+        border: "none",
+        color: "#dc2626",
+        cursor: "pointer",
+        fontSize: 14,
+        padding: "2px 4px",
+        lineHeight: 1,
+        opacity: 0.6
+      }
+    }, "\u2715"));
+  }), failedFlows.length > 5 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#dc2626",
+      alignSelf: "center",
+      fontWeight: 500
+    }
+  }, "+", failedFlows.length - 5, " more"))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#f8fafc",
       padding: "16px 26px"
@@ -3755,11 +3832,12 @@ function App() {
   const [projects, setProjects] = useState([]);
   const [calEvents, setCalEvents] = useState([]);
   const [shelter, setShelter] = useState({ men: 0, women: 0, unassigned: 0, loaded: false, error: false, lastFetch: null });
+  const [failedFlows, setFailedFlows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("home");
   const [energy, setEnergy] = useState("all");
   useEffect(() => {
-    Promise.all([sGet('tasks'), sGet('projects'), sGet('pain_log'), sGet('calendar_events'), sGet('streak'), sGet('shelter_occupancy')]).then(([tr, pr, plr, evr, sr, shr]) => {
+    Promise.all([sGet('tasks'), sGet('projects'), sGet('pain_log'), sGet('calendar_events'), sGet('streak'), sGet('shelter_occupancy'), sGet('failed_flows')]).then(([tr, pr, plr, evr, sr, shr, ffr]) => {
       setTasks(tr.map(tFrR));
       setProjects(pr.map(pFrR));
       setPainLog(plr.map(plFrR));
@@ -3776,6 +3854,7 @@ function App() {
       });
       const sh0 = shr[0] || { men: 0, women: 0, unassigned: 0, updated_at: null };
       setShelter({ men: sh0.men || 0, women: sh0.women || 0, unassigned: sh0.unassigned || 0, loaded: true, error: false, lastFetch: sh0.updated_at });
+      setFailedFlows((ffr || []).sort(function(a,b){return new Date(b.started_at||0)-new Date(a.started_at||0);}));
       setLoading(false);
     }).catch(e => { console.error('Load error:', e); setLoading(false); });
   }, []);
@@ -3785,6 +3864,15 @@ function App() {
       const sh0 = shr[0] || { men: 0, women: 0, unassigned: 0, updated_at: null };
       setShelter({ men: sh0.men || 0, women: sh0.women || 0, unassigned: sh0.unassigned || 0, loaded: true, error: false, lastFetch: sh0.updated_at });
     }).catch(() => { setShelter(prev => ({ ...prev, loaded: true, error: true })); });
+  };
+  const dismissFlow = function(id) {
+    setFailedFlows(function(prev){return prev.filter(function(f){return f.id!==id;});});
+    sDel('failed_flows','id',id);
+  };
+  const refreshFlows = function() {
+    sGet('failed_flows').then(function(ffr){
+      setFailedFlows((ffr||[]).sort(function(a,b){return new Date(b.started_at||0)-new Date(a.started_at||0);}));
+    }).catch(function(){});
   };
   const addTask = f => {
     const t = {
@@ -4045,7 +4133,9 @@ function App() {
     onDelete: delTask,
     onAdd: addTask,
     shelter: shelter,
-    onRefreshShelter: refreshShelter
+    onRefreshShelter: refreshShelter,
+    failedFlows: failedFlows,
+    onDismissFlow: dismissFlow
   }), view === "tasks" && /*#__PURE__*/React.createElement(TasksView, {
     tasks: tasks,
     projects: projects,
