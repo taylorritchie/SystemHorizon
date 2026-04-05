@@ -3791,6 +3791,971 @@ function CalView({
     onDel: onDelEv
   }));
 }
+// ── Finance View ─────────────────────────────────────────────────
+const BANK_TX_LABELS = {
+  "614130000": "ACH",
+  "614130001": "Direct Deposit",
+  "614130002": "Deposit",
+  "614130003": "POS",
+  "614130004": "Check",
+  "614130005": "Starting Balance",
+  "614130006": "Transfer",
+  "614130007": "Transfer Origin",
+  "614130008": "Interest",
+  "614130009": "GiveButter",
+  "614130010": "Paypal",
+  "614130011": "Square, Inc.",
+  "614130012": "Stripe",
+  "614130013": "Propay"
+};
+const BANK_TX_COLORS = {
+  "Stripe": "#ffe6e6",
+  "POS": "#ffebe0",
+  "Check": "#fff3db",
+  "Paypal": "#feffd4",
+  "GiveButter": "#fffdd1",
+  "Direct Deposit": "#f6ffed",
+  "Square, Inc.": "#e8ffe9",
+  "Transfer": "#e6fffe",
+  "Deposit": "#e8f0ff",
+  "Propay": "#dbdbff",
+  "ACH": "#ebe0ff",
+  "Transfer Origin": "#fff2ff",
+  "Interest": "#ffe3fa"
+};
+const DON_METHOD_LABELS = {
+  "844060000": "Cash",
+  "844060001": "Check",
+  "844060002": "Card",
+  "844060003": "Bank Transfer",
+  "844060004": "In Kind"
+};
+function FinanceView({
+  banking,
+  donations
+}) {
+  const [tab, setTab] = useState("banking");
+  const [dateFilter, setDateFilter] = useState("ytd");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  // Banking filters
+  const [bCat, setBCat] = useState("");
+  const [bSub, setBSub] = useState("");
+  const [bDet, setBDet] = useState("");
+  const [bMethod, setBMethod] = useState("");
+  const [bLoc, setBLoc] = useState("");
+  // Donation filters
+  const [dRecurring, setDRecurring] = useState("");
+  const [dMethod, setDMethod] = useState("");
+  const [dForm, setDForm] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const today = new Date();
+  const yr = today.getFullYear();
+  const dateRange = useMemo(() => {
+    const startOfYear = yr + "-01-01";
+    const startOfMonth = yr + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-01";
+    const q = Math.floor(today.getMonth() / 3);
+    const startOfQuarter = yr + "-" + String(q * 3 + 1).padStart(2, "0") + "-01";
+    if (dateFilter === "ytd") return {
+      from: startOfYear,
+      to: null
+    };
+    if (dateFilter === "mtd") return {
+      from: startOfMonth,
+      to: null
+    };
+    if (dateFilter === "qtd") return {
+      from: startOfQuarter,
+      to: null
+    };
+    if (dateFilter === "range") return {
+      from: customFrom || startOfYear,
+      to: customTo || null
+    };
+    return {
+      from: startOfYear,
+      to: null
+    };
+  }, [dateFilter, customFrom, customTo, yr]);
+  const inRange = d => {
+    if (!d) return false;
+    const ds = typeof d === "string" ? d.slice(0, 10) : d;
+    if (dateRange.from && ds < dateRange.from) return false;
+    if (dateRange.to && ds > dateRange.to) return false;
+    return true;
+  };
+
+  // Filtered banking data
+  const filteredBanking = useMemo(() => {
+    return banking.filter(b => {
+      if (!inRange(b.date)) return false;
+      if (bCat && b.budget_category !== bCat) return false;
+      if (bSub && b.budget_subcategory !== bSub) return false;
+      if (bDet && b.budget_detail !== bDet) return false;
+      if (bMethod && b.transaction_type_label !== bMethod) return false;
+      if (bLoc && b.location !== bLoc) return false;
+      return true;
+    });
+  }, [banking, dateRange, bCat, bSub, bDet, bMethod, bLoc]);
+
+  // Filtered donations data
+  const filteredDonations = useMemo(() => {
+    return donations.filter(d => {
+      if (!inRange(d.date)) return false;
+      if (dRecurring === "recurring" && !d.recurring) return false;
+      if (dRecurring === "onetime" && d.recurring) return false;
+      if (dMethod && d.method_of_payment_label !== dMethod) return false;
+      if (dForm && d.form_name !== dForm) return false;
+      return true;
+    });
+  }, [donations, dateRange, dRecurring, dMethod, dForm]);
+
+  // Banking KPIs
+  const bankIncome = filteredBanking.filter(b => b.amount > 0).reduce((s, b) => s + Number(b.amount), 0);
+  const bankExpenses = filteredBanking.filter(b => b.amount < 0).reduce((s, b) => s + Math.abs(Number(b.amount)), 0);
+
+  // MTD banking
+  const mtdStart = yr + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-01";
+  const mtdBanking = banking.filter(b => b.date && b.date.slice(0, 10) >= mtdStart);
+  const mtdIncome = mtdBanking.filter(b => b.amount > 0).reduce((s, b) => s + Number(b.amount), 0);
+  const mtdExpenses = mtdBanking.filter(b => b.amount < 0).reduce((s, b) => s + Math.abs(Number(b.amount)), 0);
+
+  // Donation KPIs
+  const donTotal = filteredDonations.reduce((s, d) => s + Number(d.amount || 0), 0);
+  const donorSet = new Set(filteredDonations.map(d => d.donor_name).filter(Boolean));
+  const donorCount = donorSet.size;
+
+  // Monthly chart data
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const bankChartData = useMemo(() => {
+    const inc = new Array(12).fill(0);
+    const exp = new Array(12).fill(0);
+    filteredBanking.forEach(b => {
+      const m = new Date(b.date + "T00:00:00").getMonth();
+      if (b.amount > 0) inc[m] += Number(b.amount);else exp[m] += Math.abs(Number(b.amount));
+    });
+    return {
+      inc,
+      exp
+    };
+  }, [filteredBanking]);
+  const donChartData = useMemo(() => {
+    const amt = new Array(12).fill(0);
+    filteredDonations.forEach(d => {
+      const m = new Date(d.date + "T00:00:00").getMonth();
+      amt[m] += Number(d.amount || 0);
+    });
+    return amt;
+  }, [filteredDonations]);
+
+  // Category cards for banking
+  const bankCategories = useMemo(() => {
+    const map = {};
+    filteredBanking.forEach(b => {
+      const cat = b.budget_category || "Uncategorized";
+      if (!map[cat]) map[cat] = {
+        name: cat,
+        income: 0,
+        expenses: 0,
+        count: 0
+      };
+      map[cat].count++;
+      if (b.amount > 0) map[cat].income += Number(b.amount);else map[cat].expenses += Math.abs(Number(b.amount));
+    });
+    return Object.values(map).sort((a, b) => b.income + b.expenses - (a.income + a.expenses));
+  }, [filteredBanking]);
+
+  // Top donors for donation tab
+  const topDonors = useMemo(() => {
+    const map = {};
+    filteredDonations.forEach(d => {
+      const name = d.donor_name || "Anonymous";
+      if (!map[name]) map[name] = {
+        name,
+        total: 0,
+        count: 0
+      };
+      map[name].total += Number(d.amount || 0);
+      map[name].count++;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [filteredDonations]);
+
+  // Payment method breakdown for donations
+  const donMethods = useMemo(() => {
+    const map = {};
+    filteredDonations.forEach(d => {
+      const m = d.method_of_payment_label || d.form_name || "Unknown";
+      if (!map[m]) map[m] = {
+        name: m,
+        total: 0,
+        count: 0
+      };
+      map[m].total += Number(d.amount || 0);
+      map[m].count++;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [filteredDonations]);
+
+  // Unique values for filter dropdowns
+  const bCatOpts = [...new Set(banking.map(b => b.budget_category).filter(Boolean))].sort();
+  const bSubOpts = [...new Set(banking.map(b => b.budget_subcategory).filter(Boolean))].sort();
+  const bDetOpts = [...new Set(banking.map(b => b.budget_detail).filter(Boolean))].sort();
+  const bMethodOpts = [...new Set(banking.map(b => b.transaction_type_label).filter(Boolean))].sort();
+  const bLocOpts = [...new Set(banking.map(b => b.location).filter(Boolean))].sort();
+  const dMethodOpts = [...new Set(donations.map(d => d.method_of_payment_label).filter(Boolean))].sort();
+  const dFormOpts = [...new Set(donations.map(d => d.form_name).filter(Boolean))].sort();
+  const fmt = n => "$" + Math.abs(n).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  const fmtK = n => n >= 1000 ? "$" + (n / 1000).toFixed(1) + "k" : fmt(n);
+  const card = {
+    background: "#fff",
+    border: "0.5px solid #e2e8f0",
+    borderRadius: 14,
+    padding: 20
+  };
+  const kpiCard = {
+    ...card,
+    flex: 1,
+    minWidth: 140,
+    textAlign: "center"
+  };
+  const renderChart = (data, type) => {
+    const W = 700,
+      H = 220,
+      pad = 40,
+      barW = type === "banking" ? 22 : 30;
+    const maxVal = type === "banking" ? Math.max(...data.inc, ...data.exp, 1) : Math.max(...data, 1);
+    const scale = (H - pad * 2) / maxVal;
+    const chartW = W - pad * 2;
+    const gap = chartW / 12;
+    return /*#__PURE__*/React.createElement("svg", {
+      viewBox: `0 0 ${W} ${H}`,
+      style: {
+        width: "100%",
+        maxHeight: 220
+      }
+    }, [0, 0.25, 0.5, 0.75, 1].map((p, i) => {
+      const y = H - pad - maxVal * p * scale;
+      return /*#__PURE__*/React.createElement("g", {
+        key: i
+      }, /*#__PURE__*/React.createElement("line", {
+        x1: pad,
+        y1: y,
+        x2: W - pad,
+        y2: y,
+        stroke: "#e2e8f0",
+        strokeWidth: 0.5
+      }), /*#__PURE__*/React.createElement("text", {
+        x: pad - 4,
+        y: y + 3,
+        textAnchor: "end",
+        fontSize: 9,
+        fill: "#94a3b8"
+      }, fmtK(maxVal * p)));
+    }), months.map((m, i) => {
+      const x = pad + gap * i + gap / 2;
+      if (type === "banking") {
+        const incH = data.inc[i] * scale;
+        const expH = data.exp[i] * scale;
+        return /*#__PURE__*/React.createElement("g", {
+          key: i
+        }, /*#__PURE__*/React.createElement("rect", {
+          x: x - barW - 1,
+          y: H - pad - incH,
+          width: barW,
+          height: Math.max(incH, 0),
+          rx: 3,
+          fill: "#16a34a",
+          opacity: 0.8
+        }), /*#__PURE__*/React.createElement("rect", {
+          x: x + 1,
+          y: H - pad - expH,
+          width: barW,
+          height: Math.max(expH, 0),
+          rx: 3,
+          fill: "#dc2626",
+          opacity: 0.7
+        }), /*#__PURE__*/React.createElement("text", {
+          x: x,
+          y: H - pad + 14,
+          textAnchor: "middle",
+          fontSize: 10,
+          fill: "#64748b"
+        }, m));
+      } else {
+        const h = data[i] * scale;
+        return /*#__PURE__*/React.createElement("g", {
+          key: i
+        }, /*#__PURE__*/React.createElement("rect", {
+          x: x - barW / 2,
+          y: H - pad - h,
+          width: barW,
+          height: Math.max(h, 0),
+          rx: 3,
+          fill: "#1d4ed8",
+          opacity: 0.8
+        }), /*#__PURE__*/React.createElement("text", {
+          x: x,
+          y: H - pad + 14,
+          textAnchor: "middle",
+          fontSize: 10,
+          fill: "#64748b"
+        }, m));
+      }
+    }));
+  };
+  const FilterPill = ({
+    label,
+    value,
+    onChange,
+    options
+  }) => /*#__PURE__*/React.createElement("select", {
+    value: value,
+    onChange: e => onChange(e.target.value),
+    style: {
+      padding: "4px 8px",
+      fontSize: 11,
+      borderRadius: 999,
+      border: "0.5px solid #e2e8f0",
+      background: value ? "#eff6ff" : "#f8fafc",
+      color: value ? "#1d4ed8" : "#64748b",
+      cursor: "pointer",
+      maxWidth: 140
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, label), options.map(o => /*#__PURE__*/React.createElement("option", {
+    key: o,
+    value: o
+  }, o)));
+  const scrollRef = useRef(null);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "26px 30px 40px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#1e293b"
+    }
+  }, "Finance"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "#94a3b8",
+      marginTop: 2
+    }
+  }, "Read-only \u2014 synced from Dataverse")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: "#64748b"
+    }
+  }, today.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginBottom: 16
+    }
+  }, [["banking", "Banking"], ["donations", "Donations"]].map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+    key: id,
+    onClick: () => setTab(id),
+    style: {
+      padding: "6px 18px",
+      borderRadius: 999,
+      fontSize: 13,
+      fontWeight: 600,
+      background: tab === id ? "#facc15" : "#f8fafc",
+      color: tab === id ? "#1e293b" : "#64748b",
+      border: tab === id ? "1px solid #eab308" : "0.5px solid #e2e8f0",
+      cursor: "pointer"
+    }
+  }, label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      marginBottom: 18,
+      flexWrap: "wrap"
+    }
+  }, tab === "banking" ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: kpiCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 4
+    }
+  }, dateFilter === "mtd" ? "MTD" : dateFilter === "qtd" ? "QTD" : "YTD", " Income"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#16a34a"
+    }
+  }, fmt(bankIncome))), /*#__PURE__*/React.createElement("div", {
+    style: kpiCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 4
+    }
+  }, dateFilter === "mtd" ? "MTD" : dateFilter === "qtd" ? "QTD" : "YTD", " Expenses"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#dc2626"
+    }
+  }, fmt(bankExpenses))), /*#__PURE__*/React.createElement("div", {
+    style: kpiCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 4
+    }
+  }, "MTD Income"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#16a34a"
+    }
+  }, fmt(mtdIncome))), /*#__PURE__*/React.createElement("div", {
+    style: kpiCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 4
+    }
+  }, "MTD Expenses"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#dc2626"
+    }
+  }, fmt(mtdExpenses)))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: kpiCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 4
+    }
+  }, dateFilter === "mtd" ? "MTD" : dateFilter === "qtd" ? "QTD" : "YTD", " Donations"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#1d4ed8"
+    }
+  }, fmt(donTotal))), /*#__PURE__*/React.createElement("div", {
+    style: kpiCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 4
+    }
+  }, "Donor Count"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#1d4ed8"
+    }
+  }, donorCount)), /*#__PURE__*/React.createElement("div", {
+    style: kpiCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 4
+    }
+  }, "Avg Gift"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      fontWeight: 700,
+      color: "#1d4ed8"
+    }
+  }, filteredDonations.length ? fmt(donTotal / filteredDonations.length) : "$0.00")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...card,
+      marginBottom: 18,
+      background: "#fffdf5"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", null, tab === "banking" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 700,
+      color: "#1e293b"
+    }
+  }, "Net: ", fmt(bankIncome - bankExpenses)), tab === "donations" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 700,
+      color: "#1e293b"
+    }
+  }, "Total Donations: ", fmt(donTotal))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      alignItems: "center",
+      flexWrap: "wrap"
+    }
+  }, [["ytd", "YTD"], ["mtd", "MTD"], ["qtd", "QTD"], ["range", "Range"]].map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+    key: id,
+    onClick: () => setDateFilter(id),
+    style: {
+      padding: "3px 10px",
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 600,
+      background: dateFilter === id ? "#facc15" : "#f8fafc",
+      color: dateFilter === id ? "#1e293b" : "#64748b",
+      border: dateFilter === id ? "1px solid #eab308" : "0.5px solid #e2e8f0",
+      cursor: "pointer"
+    }
+  }, label)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowFilters(!showFilters),
+    style: {
+      padding: "3px 10px",
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 600,
+      background: showFilters ? "#1d4ed8" : "#f8fafc",
+      color: showFilters ? "#fff" : "#64748b",
+      border: showFilters ? "1px solid #1d4ed8" : "0.5px solid #e2e8f0",
+      cursor: "pointer"
+    }
+  }, "Filters ", showFilters ? "▲" : "▼"))), dateFilter === "range" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 10,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: customFrom,
+    onChange: e => setCustomFrom(e.target.value),
+    style: {
+      fontSize: 12,
+      padding: "4px 8px",
+      width: 140
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "#94a3b8"
+    }
+  }, "to"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: customTo,
+    onChange: e => setCustomTo(e.target.value),
+    style: {
+      fontSize: 12,
+      padding: "4px 8px",
+      width: 140
+    }
+  })), showFilters && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginBottom: 12,
+      flexWrap: "wrap"
+    }
+  }, tab === "banking" ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Category",
+    value: bCat,
+    onChange: setBCat,
+    options: bCatOpts
+  }), /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Subcategory",
+    value: bSub,
+    onChange: setBSub,
+    options: bSubOpts
+  }), /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Detail",
+    value: bDet,
+    onChange: setBDet,
+    options: bDetOpts
+  }), /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Method",
+    value: bMethod,
+    onChange: setBMethod,
+    options: bMethodOpts
+  }), /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Location",
+    value: bLoc,
+    onChange: setBLoc,
+    options: bLocOpts
+  })) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Recurring",
+    value: dRecurring,
+    onChange: setDRecurring,
+    options: ["recurring", "onetime"]
+  }), /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Payment",
+    value: dMethod,
+    onChange: setDMethod,
+    options: dMethodOpts
+  }), /*#__PURE__*/React.createElement(FilterPill, {
+    label: "Form",
+    value: dForm,
+    onChange: setDForm,
+    options: dFormOpts
+  })), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setBCat("");
+      setBSub("");
+      setBDet("");
+      setBMethod("");
+      setBLoc("");
+      setDRecurring("");
+      setDMethod("");
+      setDForm("");
+    },
+    style: {
+      padding: "3px 10px",
+      borderRadius: 999,
+      fontSize: 11,
+      color: "#dc2626",
+      border: "0.5px solid #fecaca",
+      background: "#fef2f2",
+      cursor: "pointer"
+    }
+  }, "Clear")), tab === "banking" ? renderChart(bankChartData, "banking") : renderChart(donChartData, "donations"), tab === "banking" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 16,
+      justifyContent: "center",
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      fontSize: 11,
+      color: "#64748b"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 10,
+      height: 10,
+      borderRadius: 2,
+      background: "#16a34a"
+    }
+  }), " Income"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      fontSize: 11,
+      color: "#64748b"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 10,
+      height: 10,
+      borderRadius: 2,
+      background: "#dc2626"
+    }
+  }), " Expenses"))), tab === "banking" && bankCategories.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 600,
+      color: "#1e293b",
+      marginBottom: 8
+    }
+  }, "By Category"), /*#__PURE__*/React.createElement("div", {
+    ref: scrollRef,
+    style: {
+      display: "flex",
+      gap: 10,
+      overflowX: "auto",
+      paddingBottom: 8
+    }
+  }, bankCategories.map(c => /*#__PURE__*/React.createElement("div", {
+    key: c.name,
+    style: {
+      ...card,
+      minWidth: 180,
+      flex: "0 0 auto",
+      padding: 14,
+      background: "#fffdf5",
+      border: "1px solid #eab308",
+      borderRadius: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      color: "#1e293b",
+      marginBottom: 8,
+      whiteSpace: "nowrap"
+    }
+  }, c.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 2
+    }
+  }, "Income: ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#16a34a",
+      fontWeight: 600
+    }
+  }, fmt(c.income))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#64748b",
+      marginBottom: 2
+    }
+  }, "Expenses: ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#dc2626",
+      fontWeight: 600
+    }
+  }, fmt(c.expenses))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: "#94a3b8"
+    }
+  }, c.count, " transactions"))))), tab === "donations" && topDonors.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 14,
+      marginBottom: 18,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...card,
+      flex: 1,
+      minWidth: 280
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 600,
+      color: "#1e293b",
+      marginBottom: 10
+    }
+  }, "Top Donors"), topDonors.map((d, i) => /*#__PURE__*/React.createElement("div", {
+    key: d.name,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "6px 0",
+      borderBottom: i < topDonors.length - 1 ? "0.5px solid #f1f5f9" : "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "#334155"
+    }
+  }, d.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: "#94a3b8"
+    }
+  }, d.count, "x"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      color: "#1d4ed8"
+    }
+  }, fmt(d.total)))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...card,
+      flex: 1,
+      minWidth: 280
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 600,
+      color: "#1e293b",
+      marginBottom: 10
+    }
+  }, "By Source"), donMethods.map((m, i) => /*#__PURE__*/React.createElement("div", {
+    key: m.name,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "6px 0",
+      borderBottom: i < donMethods.length - 1 ? "0.5px solid #f1f5f9" : "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "#334155"
+    }
+  }, m.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: "#94a3b8"
+    }
+  }, m.count, "x"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      color: "#16a34a"
+    }
+  }, fmt(m.total))))))), /*#__PURE__*/React.createElement("div", {
+    style: card
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 600,
+      color: "#1e293b",
+      marginBottom: 10
+    }
+  }, "Recent ", tab === "banking" ? "Transactions" : "Donations", " (", tab === "banking" ? filteredBanking.length : filteredDonations.length, ")"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      borderBottom: "1px solid #e2e8f0"
+    }
+  }, /*#__PURE__*/React.createElement("th", {
+    style: {
+      textAlign: "left",
+      padding: "6px 8px",
+      color: "#64748b",
+      fontWeight: 600
+    }
+  }, "Date"), tab === "banking" && /*#__PURE__*/React.createElement("th", {
+    style: {
+      textAlign: "left",
+      padding: "6px 8px",
+      color: "#64748b",
+      fontWeight: 600
+    }
+  }, "Method"), tab === "donations" && /*#__PURE__*/React.createElement("th", {
+    style: {
+      textAlign: "left",
+      padding: "6px 8px",
+      color: "#64748b",
+      fontWeight: 600
+    }
+  }, "Donor"), /*#__PURE__*/React.createElement("th", {
+    style: {
+      textAlign: "right",
+      padding: "6px 8px",
+      color: "#64748b",
+      fontWeight: 600
+    }
+  }, "Amount"), /*#__PURE__*/React.createElement("th", {
+    style: {
+      textAlign: "left",
+      padding: "6px 8px",
+      color: "#64748b",
+      fontWeight: 600
+    }
+  }, "Notes"))), /*#__PURE__*/React.createElement("tbody", null, (tab === "banking" ? filteredBanking.sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 50) : filteredDonations.sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 50)).map((t, i) => /*#__PURE__*/React.createElement("tr", {
+    key: t.id || i,
+    style: {
+      borderBottom: "0.5px solid #f1f5f9"
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "6px 8px",
+      color: "#475569",
+      whiteSpace: "nowrap"
+    }
+  }, t.date ? new Date(t.date + "T00:00:00").toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric"
+  }) : "—"), tab === "banking" && /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "6px 8px"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: "2px 8px",
+      borderRadius: 999,
+      fontSize: 11,
+      background: BANK_TX_COLORS[t.transaction_type_label] || "#f1f5f9",
+      color: "#475569"
+    }
+  }, t.transaction_type_label || "—")), tab === "donations" && /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "6px 8px",
+      color: "#475569"
+    }
+  }, t.donor_name || "Anonymous"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "6px 8px",
+      textAlign: "right",
+      fontWeight: 600,
+      fontVariantNumeric: "tabular-nums",
+      color: tab === "banking" ? Number(t.amount) >= 0 ? "#16a34a" : "#dc2626" : "#1d4ed8"
+    }
+  }, Number(t.amount) < 0 ? "-" : "", fmt(t.amount)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "6px 8px",
+      color: "#94a3b8",
+      maxWidth: 200,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, tab === "banking" ? t.notes || t.check_num || "" : t.form_name || ""))))), (tab === "banking" ? filteredBanking.length : filteredDonations.length) === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: "#94a3b8",
+      fontSize: 13
+    }
+  }, "No data yet \u2014 waiting for Power Automate sync"))));
+}
+
 function PlaceView({
   label
 }) {
@@ -3833,11 +4798,13 @@ function App() {
   const [calEvents, setCalEvents] = useState([]);
   const [shelter, setShelter] = useState({ men: 0, women: 0, unassigned: 0, loaded: false, error: false, lastFetch: null });
   const [failedFlows, setFailedFlows] = useState([]);
+  const [banking, setBanking] = useState([]);
+  const [donations, setDonations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("home");
   const [energy, setEnergy] = useState("all");
   useEffect(() => {
-    Promise.all([sGet('tasks'), sGet('projects'), sGet('pain_log'), sGet('calendar_events'), sGet('streak'), sGet('shelter_occupancy'), sGet('failed_flows')]).then(([tr, pr, plr, evr, sr, shr, ffr]) => {
+    Promise.all([sGet('tasks'), sGet('projects'), sGet('pain_log'), sGet('calendar_events'), sGet('streak'), sGet('shelter_occupancy'), sGet('failed_flows'), sGet('finance_banking'), sGet('finance_donations')]).then(([tr, pr, plr, evr, sr, shr, ffr, fbr, fdr]) => {
       setTasks(tr.map(tFrR));
       setProjects(pr.map(pFrR));
       setPainLog(plr.map(plFrR));
@@ -3855,6 +4822,8 @@ function App() {
       const sh0 = shr[0] || { men: 0, women: 0, unassigned: 0, updated_at: null };
       setShelter({ men: sh0.men || 0, women: sh0.women || 0, unassigned: sh0.unassigned || 0, loaded: true, error: false, lastFetch: sh0.updated_at });
       setFailedFlows((ffr || []).sort(function(a,b){return new Date(b.started_at||0)-new Date(a.started_at||0);}));
+      setBanking(fbr || []);
+      setDonations(fdr || []);
       setLoading(false);
     }).catch(e => { console.error('Load error:', e); setLoading(false); });
   }, []);
@@ -4157,7 +5126,10 @@ function App() {
     onStatus: updStatus,
     onDelete: delTask,
     onAddTask: addTask
-  }), !["home", "tasks", "pain", "projects", "calendar"].includes(view) && /*#__PURE__*/React.createElement(PlaceView, {
+  }), view === "finance" && /*#__PURE__*/React.createElement(FinanceView, {
+    banking: banking,
+    donations: donations
+  }), !["home", "tasks", "pain", "projects", "calendar", "finance"].includes(view) && /*#__PURE__*/React.createElement(PlaceView, {
     label: vLabel
   })));
 }
