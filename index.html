@@ -5707,8 +5707,8 @@ function App() {
         return /*#__PURE__*/React.createElement("button", { key: label, onClick: function() { setView("finance"); }, style: { display: "block", width: "100%", textAlign: "left", background: "transparent", color: view === "finance" ? "rgba(52,211,153,0.7)" : "rgba(255,255,255,0.7)", border: "none", borderRadius: 5, padding: "6px 10px", fontSize: 12, fontWeight: 400, cursor: "pointer", borderLeft: "2px solid transparent" } }, label);
       })
     )
-  )
-),
+  ),
+
   /* ── Reports ── */
   /*#__PURE__*/React.createElement("button", { onClick: function() { setView("reports"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "reports" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "reports" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "reports" ? 600 : 400, cursor: "pointer", borderLeft: view === "reports" ? "3px solid #10b981" : "3px solid transparent" } }, "Reports"),
 
@@ -5834,7 +5834,7 @@ function App() {
     onUpdTask: updTask
   }), !["home", "tasks", "pain", "projects", "calendar", "finance", "notes", "areas"].includes(view) && /*#__PURE__*/React.createElement(PlaceView, {
     label: vLabel
-  }));
+  })));
 }
 
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
