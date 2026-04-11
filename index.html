@@ -49,8 +49,8 @@
     input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.7);}
     input[type=time]::-webkit-calendar-picker-indicator{filter:invert(0.7);}
     
-    .glass-card{background:rgba(7,11,20,0.55)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:0.5px solid rgba(255,255,255,0.08)!important;border-radius:14px;}
-    .glass-card-green{background:rgba(7,11,20,0.50)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:0.5px solid rgba(16,185,129,0.12)!important;border-radius:14px;}
+    .glass-card{background:rgba(7,11,20,0.72)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:0.5px solid rgba(255,255,255,0.08)!important;border-radius:14px;}
+    .glass-card-green{background:rgba(7,11,20,0.65)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:0.5px solid rgba(16,185,129,0.12)!important;border-radius:14px;}
     @keyframes spin{to{transform:rotate(360deg);}}
   </style>
 </head>
@@ -106,8 +106,8 @@ const CATS = [{
 }, {
   id: "operations",
   l: "Operations / Admin",
-  bg: "rgba(255,255,255,0.04)",
-  fg: "#94a3b8"
+  bg: "rgba(14,165,233,0.1)",
+  fg: "#38bdf8"
 }, {
   id: "personal",
   l: "Personal Org",
@@ -175,7 +175,7 @@ const ENERGY = [{
 const PC = ["rgba(255,255,255,0.04)", "rgba(16,185,129,0.15)", "#6ee7b7", "#34d399", "#fde68a", "#fcd34d", "#fbbf24", "#f97316", "#ef4444", "#dc2626", "#991b1b"];
 const PL = ["", "Minimal", "Mild", "Mild+", "Moderate", "Moderate+", "Noticeable", "Significant", "Severe", "Very Severe", "Worst"];
 const pfg = n => n <= 3 ? "#34d399" : n <= 6 ? "#fbbf24" : "#fca5a5";
-const NAV = [["Home", "home"], ["Tasks", "tasks"], ["Finance", "finance"], ["Shelter", "shelter"], ["Calendar", "calendar"], ["Notes", "notes"], ["Marketing", "marketing"], ["Reports", "reports"], ["Employees", "employees"], ["History", "history"], ["Pain Log", "pain"], ["AREAS", "areas"]];
+const NAV = [["Home", "home"], ["Tasks", "tasks"], ["Finance", "finance"], ["Shelter", "shelter"], ["Calendar", "calendar"], ["Notes", "notes"], ["Marketing", "marketing"], ["Reports", "reports"], ["Employees", "employees"], ["History", "history"], ["BioStatus", "pain"], ["AREAS", "areas"]];
 const QL = [{
   l: "Admin Bridge",
   u: "https://org25952d15.crm.dynamics.com/main.aspx?appid=f7bfa9c3-e3de-ee11-904d-000d3a359ca4&pagetype=entitylist&etn=tr_inex"
@@ -191,6 +191,9 @@ const QL = [{
 }, {
   l: "Power Apps",
   u: "https://make.powerapps.com"
+}, {
+  l: "SharePoint",
+  u: "https://thedaviesshelter.sharepoint.com/sites/development2"
 }];
 // ── Shelter Occupancy Config ──────────────────────────────────────
 const SHELTER_CAPACITY = { men: 16, women: 12 };
@@ -260,7 +263,9 @@ const tToR = t => ({
   status: t.status,
   project_id: t.projectId || null,
   created_at: t.createdAt,
-  completed_at: t.completedAt || null
+  completed_at: t.completedAt || null,
+  due_date: t.dueDate || null,
+  waiting_on: t.waitingOn || null
 });
 const tFrR = r => ({
   id: r.id,
@@ -271,7 +276,9 @@ const tFrR = r => ({
   status: r.status,
   projectId: r.project_id,
   createdAt: r.created_at,
-  completedAt: r.completed_at
+  completedAt: r.completed_at,
+  dueDate: r.due_date,
+  waitingOn: r.waiting_on
 });
 const pToR = p => ({
   id: p.id,
@@ -414,7 +421,7 @@ function Card({
 }) {
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       border: accent ? "1px solid " + accent + "22" : "0.5px solid rgba(255,255,255,0.05)",
       borderTop: accent ? "3px solid " + accent : undefined,
       borderRadius: 14,
@@ -445,7 +452,7 @@ function Sel({
       borderRadius: 8,
       padding: "5px 24px 5px 10px",
       fontSize: 12,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       background: "transparent",
       cursor: "pointer",
       fontFamily: "var(--font-sans)"
@@ -460,7 +467,7 @@ function Sel({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE"));
@@ -476,6 +483,7 @@ function TaskCard({
   compact
 }) {
   const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [conf, setConf] = useState(false);
   const [editing, setEditing] = useState(false);
   const [eName, setEName] = useState(task.name);
@@ -483,6 +491,18 @@ function TaskCard({
   const [ePr, setEPr] = useState(task.priority);
   const [eCat, setECat] = useState(task.category);
   const [ePid, setEPid] = useState(task.projectId || "");
+  const [eDue, setEDue] = useState(task.dueDate || "");
+  const [waitInput, setWaitInput] = useState(task.waitingOn || "");
+  const [showWaitPrompt, setShowWaitPrompt] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(function() {
+    if (!menuOpen) return;
+    var handler = function(e) { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return function() { document.removeEventListener("mousedown", handler); };
+  }, [menuOpen]);
+
   const saveEdit = () => {
     if (onEdit) {
       var newCat = eCat;
@@ -490,175 +510,120 @@ function TaskCard({
         var proj = projects.find(function(p){return p.id===ePid;});
         if (proj && proj.area) newCat = proj.area;
       }
-      onEdit({...task, name: eName.trim() || task.name, notes: eNotes, priority: ePr, category: newCat, projectId: ePid || null});
+      onEdit({...task, name: eName.trim() || task.name, notes: eNotes, priority: ePr, category: newCat, projectId: ePid || null, dueDate: eDue || null});
     }
     setEditing(false);
   };
-  const c = cat(task.category),
-    p = prio(task.priority),
-    done = task.status === "Done";
+
+  const doWaiting = function() {
+    if (onEdit) onEdit({...task, status: "Waiting", waitingOn: waitInput.trim() || null});
+    else onStatus(task.id, "Waiting");
+    setShowWaitPrompt(false);
+    setWaitInput("");
+  };
+
+  const c = cat(task.category), p = prio(task.priority), done = task.status === "Done";
+
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       border: task.status === "Today" ? "1.5px solid " + B : done ? "0.5px solid rgba(16,185,129,0.15)" : "0.5px solid rgba(255,255,255,0.06)",
-      borderRadius: 10,
-      padding: compact ? "7px 10px" : "9px 11px",
-      marginBottom: 5,
-      opacity: done ? 0.6 : 1
+      borderRadius: 10, padding: compact ? "7px 10px" : "9px 11px", marginBottom: 5, opacity: done ? 0.6 : 1, position: "relative"
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      alignItems: "flex-start"
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => onStatus(task.id, done ? "Open" : "Done"),
-    style: {
-      width: 17,
-      height: 17,
-      borderRadius: "50%",
-      border: "1.5px solid " + (done ? GR : p.dot),
-      background: done ? GR : "none",
-      cursor: "pointer",
-      flexShrink: 0,
-      marginTop: 1,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 9,
-      color: "rgba(255,255,255,0.95)",
-      padding: 0
-    }
-  }, done ? "✓" : ""), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    onClick: () => setOpen(!open),
-    style: {
-      fontSize: compact ? 12 : 13,
-      fontWeight: 500,
-      color: "rgba(255,255,255,0.95)",
-      cursor: "pointer",
-      lineHeight: 1.35,
-      textDecoration: done ? "line-through" : "none"
-    }
-  }, task.name), !compact && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 4,
-      marginTop: 3,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement(Pill, {
-    bg: p.bg,
-    fg: p.fg,
-    xs: true
-  }, p.l), /*#__PURE__*/React.createElement(Pill, {
-    bg: c.bg,
-    fg: c.fg,
-    xs: true
-  }, c.l), task.status === "Waiting" && /*#__PURE__*/React.createElement(Pill, {
-    bg: "rgba(245,158,11,0.1)",
-    fg: "#fbbf24",
-    xs: true
-  }, "Waiting")), open && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 6,
-      paddingTop: 6,
-      borderTop: "0.5px solid rgba(255,255,255,0.03)"
-    }
-  }, editing ? /*#__PURE__*/React.createElement("div", {style:{display:"flex",flexDirection:"column",gap:6}},
-    /*#__PURE__*/React.createElement("input", {value:eName,onChange:function(e){setEName(e.target.value);},style:{fontSize:12,padding:"4px 8px",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:6,fontFamily:"var(--font-sans)"}}),
-    /*#__PURE__*/React.createElement("textarea", {value:eNotes,onChange:function(e){setENotes(e.target.value);},rows:2,placeholder:"Notes...",style:{fontSize:11,padding:"4px 8px",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:6,resize:"none",fontFamily:"var(--font-sans)"}}),
-    /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}},
-      /*#__PURE__*/React.createElement("select", {value:ePr,onChange:function(e){setEPr(e.target.value);},style:{fontSize:11,padding:"3px 6px",borderRadius:6,border:"0.5px solid rgba(255,255,255,0.05)"}}, PRIOS.map(function(p){return /*#__PURE__*/React.createElement("option",{key:p.id,value:p.id},p.l);})),
-      /*#__PURE__*/React.createElement("select", {value:ePid,onChange:function(e){setEPid(e.target.value);},style:{fontSize:11,padding:"3px 6px",borderRadius:6,border:"0.5px solid rgba(255,255,255,0.05)"}},
-        /*#__PURE__*/React.createElement("option",{value:""},"No project"),
-        (projects||[]).filter(function(p){return p.status!=="closed";}).map(function(p){return /*#__PURE__*/React.createElement("option",{key:p.id,value:p.id},p.name);})
-      ),
-      /*#__PURE__*/React.createElement("select", {value:eCat,onChange:function(e){setECat(e.target.value);},style:{fontSize:11,padding:"3px 6px",borderRadius:6,border:"0.5px solid rgba(255,255,255,0.05)"}}, CATS.map(function(c){return /*#__PURE__*/React.createElement("option",{key:c.id,value:c.id},c.l);}))
+  },
+    /* ── 3-dot menu button (top-right) ── */
+    !compact && !done && /*#__PURE__*/React.createElement("div", { ref: menuRef, style: { position: "absolute", top: 6, right: 8 } },
+      /*#__PURE__*/React.createElement("button", { onClick: function(e) { e.stopPropagation(); setMenuOpen(!menuOpen); }, style: { background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 16, cursor: "pointer", padding: "2px 4px", lineHeight: 1 } }, "⋮"),
+      menuOpen && /*#__PURE__*/React.createElement("div", { style: { position: "absolute", top: 22, right: 0, background: "rgba(7,11,20,0.95)", border: "0.5px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: 4, zIndex: 100, minWidth: 100, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" } },
+        onEdit && /*#__PURE__*/React.createElement("button", { onClick: function() { setEditing(true); setMenuOpen(false); setOpen(true); }, style: { display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "rgba(255,255,255,0.8)", fontSize: 12, padding: "6px 10px", cursor: "pointer", borderRadius: 4 }, onMouseEnter: function(e){e.currentTarget.style.background="rgba(255,255,255,0.06)";}, onMouseLeave: function(e){e.currentTarget.style.background="none";} }, "Edit"),
+        !conf ? /*#__PURE__*/React.createElement("button", { onClick: function() { setConf(true); }, style: { display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#fca5a5", fontSize: 12, padding: "6px 10px", cursor: "pointer", borderRadius: 4 }, onMouseEnter: function(e){e.currentTarget.style.background="rgba(239,68,68,0.1)";}, onMouseLeave: function(e){e.currentTarget.style.background="none";} }, "Delete")
+        : /*#__PURE__*/React.createElement("div", { style: { padding: "4px 8px" } },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "#fca5a5", marginBottom: 4 } }, "Delete this task?"),
+            /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4 } },
+              /*#__PURE__*/React.createElement("button", { onClick: function() { onDelete(task.id); setMenuOpen(false); }, style: { fontSize: 10, padding: "3px 8px", background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "none", borderRadius: 4, cursor: "pointer" } }, "Yes"),
+              /*#__PURE__*/React.createElement("button", { onClick: function() { setConf(false); }, style: { fontSize: 10, padding: "3px 8px", border: "0.5px solid rgba(255,255,255,0.1)", borderRadius: 4, cursor: "pointer", color: "rgba(255,255,255,0.7)" } }, "No")
+            )
+          )
+      )
     ),
-    /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:4}},
-      /*#__PURE__*/React.createElement("button", {onClick:saveEdit,style:{fontSize:10,padding:"3px 10px",background:"rgba(16,185,129,0.12)",color:"rgba(255,255,255,0.95)",border:"none",borderRadius:6,cursor:"pointer",fontWeight:500}}, "Save"),
-      /*#__PURE__*/React.createElement("button", {onClick:function(){setEditing(false);setEName(task.name);setENotes(task.notes||"");setEPr(task.priority);setECat(task.category);setEPid(task.projectId||"");},style:{fontSize:10,padding:"3px 8px",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:6,cursor:"pointer"}}, "Cancel")
+
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start", paddingRight: compact ? 0 : 20 } },
+      /* ── Checkbox ── */
+      /*#__PURE__*/React.createElement("button", {
+        onClick: function() { onStatus(task.id, done ? "Open" : "Done"); },
+        style: { width: 17, height: 17, borderRadius: "50%", border: "1.5px solid " + (done ? GR : p.dot), background: done ? GR : "none", cursor: "pointer", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "rgba(255,255,255,0.95)", padding: 0 }
+      }, done ? "✓" : ""),
+
+      /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+        /* ── Task name ── */
+        /*#__PURE__*/React.createElement("div", {
+          onClick: function() { setOpen(!open); },
+          style: { fontSize: compact ? 12 : 13, fontWeight: 500, color: "rgba(255,255,255,0.95)", cursor: "pointer", lineHeight: 1.35, textDecoration: done ? "line-through" : "none" }
+        }, task.name),
+
+        /* ── Waiting reason display ── */
+        task.status === "Waiting" && task.waitingOn && /*#__PURE__*/React.createElement("div", {
+          style: { fontSize: 11, color: "#fbbf24", marginTop: 3, fontStyle: "italic" }
+        }, "⏳ Waiting on: ", task.waitingOn),
+
+        /* ── Pills row ── */
+        !compact && /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, marginTop: 3, flexWrap: "wrap", alignItems: "center" } },
+          /*#__PURE__*/React.createElement(Pill, { bg: p.bg, fg: p.fg, xs: true }, p.l),
+          /*#__PURE__*/React.createElement(Pill, { bg: c.bg, fg: c.fg, xs: true }, c.l),
+          task.status === "Waiting" && /*#__PURE__*/React.createElement(Pill, { bg: "rgba(245,158,11,0.1)", fg: "#fbbf24", xs: true }, "Waiting"),
+          /* ── Dates ── */
+          task.dueDate && /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, color: "rgba(255,255,255,0.55)", fontFamily: "var(--font-mono)" } }, "Due ", fmt(task.dueDate)),
+          task.createdAt && /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-mono)" } }, "Created ", task.createdAt.slice(0,10))
+        ),
+
+        /* ── Expanded detail ── */
+        open && /*#__PURE__*/React.createElement("div", { style: { marginTop: 6, paddingTop: 6, borderTop: "0.5px solid rgba(255,255,255,0.03)" } },
+
+          /* ── Editing mode ── */
+          editing ? /*#__PURE__*/React.createElement("div", {style:{display:"flex",flexDirection:"column",gap:6}},
+            /*#__PURE__*/React.createElement("input", {value:eName,onChange:function(e){setEName(e.target.value);},style:{fontSize:12,padding:"4px 8px"}}),
+            /*#__PURE__*/React.createElement("textarea", {value:eNotes,onChange:function(e){setENotes(e.target.value);},rows:2,placeholder:"Notes...",style:{fontSize:11,padding:"4px 8px",resize:"none"}}),
+            /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}},
+              /*#__PURE__*/React.createElement("select", {value:ePr,onChange:function(e){setEPr(e.target.value);}}, PRIOS.map(function(p){return /*#__PURE__*/React.createElement("option",{key:p.id,value:p.id},p.l);})),
+              /*#__PURE__*/React.createElement("select", {value:ePid,onChange:function(e){setEPid(e.target.value);}},
+                /*#__PURE__*/React.createElement("option",{value:""},"No project"),
+                (projects||[]).filter(function(p){return p.status!=="closed";}).map(function(p){return /*#__PURE__*/React.createElement("option",{key:p.id,value:p.id},p.name);})
+              ),
+              /*#__PURE__*/React.createElement("select", {value:eCat,onChange:function(e){setECat(e.target.value);}}, CATS.map(function(c){return /*#__PURE__*/React.createElement("option",{key:c.id,value:c.id},c.l);}))
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:6,alignItems:"center"}},
+              /*#__PURE__*/React.createElement("label", {style:{fontSize:10,color:"rgba(255,255,255,0.6)"}}, "Due:"),
+              /*#__PURE__*/React.createElement("input", {type:"date",value:eDue,onChange:function(e){setEDue(e.target.value);},style:{fontSize:11,padding:"3px 6px"}})
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:4}},
+              /*#__PURE__*/React.createElement("button", {onClick:saveEdit,style:{fontSize:10,padding:"3px 10px",background:"rgba(16,185,129,0.12)",color:"rgba(255,255,255,0.95)",border:"none",borderRadius:6,cursor:"pointer",fontWeight:500}}, "Save"),
+              /*#__PURE__*/React.createElement("button", {onClick:function(){setEditing(false);setEName(task.name);setENotes(task.notes||"");setEPr(task.priority);setECat(task.category);setEPid(task.projectId||"");setEDue(task.dueDate||"");},style:{fontSize:10,padding:"3px 8px",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:6,cursor:"pointer"}}, "Cancel")
+            )
+          )
+
+          /* ── View mode (status buttons) ── */
+          : /*#__PURE__*/React.createElement(React.Fragment, null,
+              task.notes && /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "rgba(255,255,255,0.75)", marginBottom: 5, lineHeight: 1.5 } }, task.notes),
+
+              /* ── Waiting prompt ── */
+              showWaitPrompt && /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, marginBottom: 6, alignItems: "center" } },
+                /*#__PURE__*/React.createElement("input", { value: waitInput, onChange: function(e) { setWaitInput(e.target.value); }, placeholder: "What are you waiting on?", autoFocus: true, style: { flex: 1, fontSize: 11, padding: "4px 8px" }, onKeyDown: function(e) { if (e.key === "Enter") doWaiting(); } }),
+                /*#__PURE__*/React.createElement("button", { onClick: doWaiting, style: { fontSize: 10, padding: "3px 8px", background: "rgba(245,158,11,0.15)", color: "#fbbf24", border: "none", borderRadius: 6, cursor: "pointer" } }, "Set"),
+                /*#__PURE__*/React.createElement("button", { onClick: function() { setShowWaitPrompt(false); }, style: { fontSize: 10, padding: "3px 6px", cursor: "pointer" } }, "✕")
+              ),
+
+              /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 4, flexWrap: "wrap" } },
+                task.status !== "Today" && !done && /*#__PURE__*/React.createElement("button", { onClick: function() { onStatus(task.id, "Today"); }, style: { fontSize: 10, padding: "2px 7px", color: "#fff" } }, "Focus"),
+                task.status === "Today" && /*#__PURE__*/React.createElement("button", { onClick: function() { onStatus(task.id, "Open"); }, style: { fontSize: 10, padding: "2px 7px", color: "#fff" } }, "Inbox"),
+                task.status !== "Waiting" && !done && !showWaitPrompt && /*#__PURE__*/React.createElement("button", { onClick: function() { setShowWaitPrompt(true); }, style: { fontSize: 10, padding: "2px 7px", color: "#fff" } }, "Waiting"),
+                task.status === "Waiting" && /*#__PURE__*/React.createElement("button", { onClick: function() { if(onEdit) onEdit({...task, status:"Open", waitingOn:null}); else onStatus(task.id, "Open"); }, style: { fontSize: 10, padding: "2px 7px", color: "#fff" } }, "Unblock"),
+                !done && /*#__PURE__*/React.createElement("button", { onClick: function() { onStatus(task.id, "Done"); }, style: { fontSize: 10, padding: "2px 7px", color: GR } }, "Done")
+              )
+            )
+        )
+      )
     )
-  ) : /*#__PURE__*/React.createElement(React.Fragment, null,
-  task.notes && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
-      marginBottom: 5,
-      lineHeight: 1.5
-    }
-  }, task.notes), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 4,
-      flexWrap: "wrap"
-    }
-  }, onEdit && !done && /*#__PURE__*/React.createElement("button", {
-    onClick: function() { setEditing(true); },
-    style: {
-      fontSize: 10,
-      padding: "2px 7px",
-      color: "#10b981"
-    }
-  }, "Edit"), task.status !== "Today" && !done && /*#__PURE__*/React.createElement("button", {
-    onClick: () => onStatus(task.id, "Today"),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px"
-    }
-  }, "Today"), task.status === "Today" && /*#__PURE__*/React.createElement("button", {
-    onClick: () => onStatus(task.id, "Open"),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px"
-    }
-  }, "Inbox"), task.status !== "Waiting" && !done && /*#__PURE__*/React.createElement("button", {
-    onClick: () => onStatus(task.id, "Waiting"),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px"
-    }
-  }, "Waiting"), task.status === "Waiting" && /*#__PURE__*/React.createElement("button", {
-    onClick: () => onStatus(task.id, "Open"),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px"
-    }
-  }, "Unblock"), !done && /*#__PURE__*/React.createElement("button", {
-    onClick: () => onStatus(task.id, "Done"),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px",
-      color: GR
-    }
-  }, "Done"), !conf ? /*#__PURE__*/React.createElement("button", {
-    onClick: () => setConf(true),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px",
-      color: "#ef4444"
-    }
-  }, "Del") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
-    onClick: () => onDelete(task.id),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px",
-      color: "#ef4444",
-      fontWeight: 600
-    }
-  }, "Confirm?"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setConf(false),
-    style: {
-      fontSize: 10,
-      padding: "2px 7px"
-    }
-  }, "No"))))))));
+  );
 }
 
 // ── Create Form ───────────────────────────────────────────────────
@@ -699,14 +664,14 @@ function CreateForm({
     borderRadius: 8,
     padding: "5px 22px 5px 10px",
     fontSize: 12,
-    color: "rgba(255,255,255,0.25)",
+    color: "rgba(255,255,255,0.75)",
     background: "transparent",
     cursor: "pointer",
     fontFamily: "var(--font-sans)"
   };
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       borderRadius: 14,
       border: "0.5px solid rgba(255,255,255,0.05)",
       overflow: "hidden",
@@ -765,7 +730,7 @@ function CreateForm({
       outline: "none",
       resize: "none",
       fontSize: 13,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       background: "transparent",
       fontFamily: "var(--font-sans)",
       lineHeight: 1.6,
@@ -803,7 +768,7 @@ function CreateForm({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), /*#__PURE__*/React.createElement("div", {
@@ -829,7 +794,7 @@ function CreateForm({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), /*#__PURE__*/React.createElement("div", {
@@ -850,7 +815,7 @@ function CreateForm({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), projects && projects.length > 0 && /*#__PURE__*/React.createElement("div", {
@@ -873,7 +838,7 @@ function CreateForm({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), /*#__PURE__*/React.createElement("div", {
@@ -886,7 +851,7 @@ function CreateForm({
       background: "none",
       border: "none",
       fontSize: 12,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       cursor: "pointer"
     }
   }, "Cancel")));
@@ -941,7 +906,7 @@ function PainMap({
       flexWrap: "wrap"
     }
   }, [{
-    l: "Today",
+    l: "Focus",
     v: te ? te.level + "/10" : "—",
     bg: te ? PC[te.level] : "#f1f5f9",
     fg: te ? pfg(te.level) : "#64748b"
@@ -979,7 +944,7 @@ function PainMap({
   }, s.v), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginTop: 2
     }
   }, s.l)))), /*#__PURE__*/React.createElement("div", {
@@ -1005,7 +970,7 @@ function PainMap({
         marginRight: 2,
         flexShrink: 0,
         fontSize: 9,
-        color: "rgba(255,255,255,0.55)"
+        color: "rgba(255,255,255,0.8)"
       }
     }, ml ? ml.l : "");
   })), [0, 1, 2, 3, 4, 5, 6].map(di => /*#__PURE__*/React.createElement("div", {
@@ -1019,7 +984,7 @@ function PainMap({
     style: {
       width: 26,
       fontSize: 9,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       textAlign: "right",
       marginRight: 4,
       flexShrink: 0
@@ -1056,7 +1021,7 @@ function PainMap({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 9,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "Less"), [0, 2, 4, 6, 8, 10].map(l => /*#__PURE__*/React.createElement("div", {
     key: l,
@@ -1069,7 +1034,7 @@ function PainMap({
   })), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 9,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "More")))));
 }
@@ -1117,7 +1082,7 @@ function NewProjPanel({
     fontSize: 10,
     fontFamily: "var(--font-display)",
     fontWeight: 500,
-    color: "rgba(255,255,255,0.5)",
+    color: "rgba(255,255,255,0.78)",
     letterSpacing: "0.18em",
     textTransform: "uppercase",
     marginBottom: 5,
@@ -1130,7 +1095,7 @@ function NewProjPanel({
     borderRadius: 8,
     padding: "7px 26px 7px 10px",
     fontSize: 13,
-    color: "rgba(255,255,255,0.25)",
+    color: "rgba(255,255,255,0.75)",
     background: "rgba(7,11,20,0.50)",
     cursor: "pointer",
     fontFamily: "var(--font-sans)"
@@ -1195,7 +1160,7 @@ function NewProjPanel({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -1218,7 +1183,7 @@ function NewProjPanel({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE"))), /*#__PURE__*/React.createElement("div", {
@@ -1278,9 +1243,9 @@ function NewProjPanel({
       padding: 9,
       border: "0.5px solid rgba(255,255,255,0.05)",
       borderRadius: 10,
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       fontSize: 13,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       cursor: "pointer"
     }
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
@@ -1338,7 +1303,7 @@ function ProjDetail({
     fontSize: 10,
     fontFamily: "var(--font-display)",
     fontWeight: 500,
-    color: "rgba(255,255,255,0.5)",
+    color: "rgba(255,255,255,0.78)",
     letterSpacing: "0.18em",
     textTransform: "uppercase",
     marginBottom: 4,
@@ -1352,7 +1317,7 @@ function ProjDetail({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "14px 20px",
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       borderBottom: "0.5px solid rgba(255,255,255,0.05)",
       display: "flex",
       justifyContent: "space-between",
@@ -1372,7 +1337,7 @@ function ProjDetail({
       borderRadius: 8,
       padding: "4px 12px",
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       cursor: "pointer"
     }
   }, "\u2190 Projects"), /*#__PURE__*/React.createElement("span", {
@@ -1387,7 +1352,7 @@ function ProjDetail({
   }, ps.l)), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, sd())), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1504,7 +1469,7 @@ function ProjDetail({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE"))), /*#__PURE__*/React.createElement("div", {
@@ -1596,7 +1561,7 @@ function ProjDetail({
   }, s.v), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginTop: 2
     }
   }, s.l)))), /*#__PURE__*/React.createElement("div", {
@@ -1612,7 +1577,7 @@ function ProjDetail({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, "Progress"), /*#__PURE__*/React.createElement("span", {
     style: {
@@ -1655,7 +1620,7 @@ function ProjDetail({
   }, e.startDate && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "Start"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1666,7 +1631,7 @@ function ProjDetail({
   }, fmt(e.startDate))), e.dueDate && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "Due"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1700,7 +1665,7 @@ function ProjDetail({
       borderRadius: 8,
       padding: "5px 22px 5px 10px",
       fontSize: 12,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       background: "transparent",
       cursor: "pointer",
       fontFamily: "var(--font-sans)"
@@ -1717,7 +1682,7 @@ function ProjDetail({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), /*#__PURE__*/React.createElement("button", {
@@ -1763,7 +1728,7 @@ function ProjDetail({
     style: {
       textAlign: "center",
       padding: "1rem",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 12
     }
   }, "No open tasks.") : fop.map(t => /*#__PURE__*/React.createElement(TaskCard, {
@@ -1782,7 +1747,7 @@ function ProjDetail({
     style: {
       textAlign: "center",
       padding: "1rem",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 12
     }
   }, "None yet.") : cl.map(t => /*#__PURE__*/React.createElement(TaskCard, {
@@ -1840,7 +1805,7 @@ function ProjView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "14px 22px",
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(88,28,135,0.25)",
       borderBottom: "0.5px solid rgba(255,255,255,0.05)",
       display: "flex",
       justifyContent: "space-between",
@@ -1855,7 +1820,7 @@ function ProjView({
   }, "Projects"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, sd())), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1900,7 +1865,7 @@ function ProjView({
   }, t.c), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginTop: 2
     }
   }, t.l)))), /*#__PURE__*/React.createElement(Card, {
@@ -1943,7 +1908,7 @@ function ProjView({
       borderRadius: 8,
       padding: "5px 22px 5px 10px",
       fontSize: 12,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       background: "transparent",
       cursor: "pointer",
       fontFamily: "var(--font-sans)"
@@ -1960,7 +1925,7 @@ function ProjView({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), /*#__PURE__*/React.createElement("button", {
@@ -1996,7 +1961,7 @@ function ProjView({
       padding: "8px 10px",
       fontSize: 11,
       fontWeight: 600,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       whiteSpace: "nowrap",
       letterSpacing: "0.05em"
     }
@@ -2005,7 +1970,7 @@ function ProjView({
     style: {
       textAlign: "center",
       padding: "2.5rem",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 13
     }
   }, "No ", tab, " projects. ", /*#__PURE__*/React.createElement("span", {
@@ -2068,13 +2033,13 @@ function ProjView({
       style: {
         padding: "11px 10px",
         fontSize: 12,
-        color: "rgba(255,255,255,0.4)"
+        color: "rgba(255,255,255,0.75)"
       }
     }, fmt(p.startDate)), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "11px 10px",
         fontSize: 12,
-        color: "rgba(255,255,255,0.4)"
+        color: "rgba(255,255,255,0.75)"
       }
     }, fmt(p.dueDate)), /*#__PURE__*/React.createElement("td", {
       style: {
@@ -2378,7 +2343,7 @@ function HomeView({
   }, "\u2713"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "No focus tasks yet")) : focused.map(t => /*#__PURE__*/React.createElement(TaskCard, {
     key: t.id,
@@ -2394,7 +2359,7 @@ function HomeView({
       borderTop: "0.5px solid rgba(255,255,255,0.03)"
     }
   }, /*#__PURE__*/React.createElement(SL, {
-    color: "rgba(255,255,255,0.55)"
+    color: "rgba(255,255,255,0.8)"
   }, "Inbox (", openT.length, ")"), openT.slice(0, 3).map(t => /*#__PURE__*/React.createElement(TaskCard, {
     key: t.id,
     task: t,
@@ -2421,7 +2386,7 @@ function HomeView({
     style: {
       textAlign: "center",
       padding: "12px 0",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 12
     }
   }, "No active tasks.") : groups.map(([cid, ct]) => {
@@ -2446,7 +2411,7 @@ function HomeView({
     }, c.l), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 11,
-        color: "rgba(255,255,255,0.4)"
+        color: "rgba(255,255,255,0.75)"
       }
     }, ct.length)), /*#__PURE__*/React.createElement("div", {
       style: {
@@ -2485,7 +2450,7 @@ function HomeView({
   }, "\u2713"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "Nothing blocked")) : waitT.map(t => /*#__PURE__*/React.createElement(TaskCard, {
     key: t.id,
@@ -2502,7 +2467,7 @@ function HomeView({
       flexWrap: "wrap"
     }
   }, [{
-    l: "Today",
+    l: "Focus",
     v: dToday.length,
     c: GR
   }, {
@@ -2522,7 +2487,7 @@ function HomeView({
     style: {
       flex: 1,
       minWidth: 80,
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       border: "0.5px solid #bbf7d0",
       borderRadius: 11,
       padding: "10px 11px",
@@ -2537,14 +2502,14 @@ function HomeView({
   }, s.v), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginTop: 2
     }
   }, s.l))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 2,
       minWidth: 100,
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       border: "0.5px solid #bbf7d0",
       borderRadius: 11,
       padding: "10px 13px",
@@ -2555,7 +2520,7 @@ function HomeView({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       whiteSpace: "nowrap"
     }
   }, streak.count, "d streak"), /*#__PURE__*/React.createElement("div", {
@@ -2577,9 +2542,11 @@ function HomeView({
     }
   })))))), failedFlows.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
-      background: "rgba(239,68,68,0.1)",
+      background: "rgba(127,29,29,0.45)",
       padding: "12px 26px",
-      borderBottom: "1px solid #fecaca"
+      borderBottom: "1px solid rgba(252,165,165,0.2)",
+      backdropFilter: "blur(16px)",
+      WebkitBackdropFilter: "blur(16px)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2612,7 +2579,7 @@ function HomeView({
     return /*#__PURE__*/React.createElement("div", {
       key: f.id,
       style: {
-        background: "rgba(7,11,20,0.55)",
+        background: "rgba(7,11,20,0.72)",
         border: "0.5px solid #fca5a5",
         borderRadius: 10,
         padding: "7px 12px",
@@ -2664,21 +2631,21 @@ function HomeView({
   }, ["Q1 Grant Report", "Monthly Donor Letter", "Payroll Review", "Board Report"].map(r => /*#__PURE__*/React.createElement("div", {
     key: r,
     style: {
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       border: "0.5px solid rgba(255,255,255,0.05)",
       borderRadius: 10,
       padding: "6px 12px",
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, r)), /*#__PURE__*/React.createElement("div", {
     style: {
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       border: "1px dashed rgba(255,255,255,0.08)",
       borderRadius: 10,
       padding: "6px 12px",
       fontSize: 12,
-      color: "rgba(255,255,255,0.2)",
+      color: "rgba(255,255,255,0.7)",
       cursor: "pointer"
     }
   }, "+ Add"))));
@@ -2713,7 +2680,7 @@ function TasksView({
     borderRadius: 8,
     padding: "4px 22px 4px 9px",
     fontSize: 11,
-    color: "rgba(255,255,255,0.25)",
+    color: "#fff",
     background: "transparent",
     cursor: "pointer",
     fontFamily: "var(--font-sans)"
@@ -2726,7 +2693,7 @@ function TasksView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "14px 20px",
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       borderBottom: "0.5px solid rgba(255,255,255,0.05)",
       display: "flex",
       justifyContent: "space-between",
@@ -2741,7 +2708,7 @@ function TasksView({
   }, "All Tasks"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, sd())), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2790,7 +2757,7 @@ function TasksView({
     onClick: () => setShowC(true),
     style: {
       background: "rgba(255,255,255,0.04)",
-      color: "rgba(255,255,255,0.25)",
+      color: "#fff",
       border: "0.5px solid rgba(255,255,255,0.05)",
       borderRadius: 8,
       padding: "5px 13px",
@@ -2825,7 +2792,7 @@ function TasksView({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 9,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), /*#__PURE__*/React.createElement("div", {
@@ -2848,7 +2815,7 @@ function TasksView({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 9,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE")), /*#__PURE__*/React.createElement("div", {
@@ -2871,7 +2838,7 @@ function TasksView({
       top: "50%",
       transform: "translateY(-50%)",
       fontSize: 9,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       pointerEvents: "none"
     }
   }, "\u25BE"))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SL, null, "All Tasks (", list.length, ")"), /*#__PURE__*/React.createElement("div", {
@@ -2883,7 +2850,7 @@ function TasksView({
     style: {
       textAlign: "center",
       padding: "1.5rem",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 13
     }
   }, "No tasks match.") : list.map(t => /*#__PURE__*/React.createElement(TaskCard, {
@@ -2907,7 +2874,7 @@ function TasksView({
     style: {
       textAlign: "center",
       padding: "10px 0",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 12
     }
   }, "No focus tasks.") : todayT.map(t => /*#__PURE__*/React.createElement(TaskCard, {
@@ -2926,7 +2893,7 @@ function TasksView({
     style: {
       textAlign: "center",
       padding: "10px 0",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 12
     }
   }, "No active tasks.") : catG.map(([cid, ct]) => {
@@ -2951,7 +2918,7 @@ function TasksView({
     }, c.l), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 11,
-        color: "rgba(255,255,255,0.4)"
+        color: "#fff"
       }
     }, ct.length)), /*#__PURE__*/React.createElement("div", {
       style: {
@@ -2988,7 +2955,7 @@ function TasksView({
     style: {
       textAlign: "center",
       padding: "1.5rem",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 12
     }
   }, "No completed tasks yet.") : done.slice(0, 30).map(t => {
@@ -3023,14 +2990,14 @@ function TasksView({
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
-        color: "rgba(255,255,255,0.4)",
+        color: "#fff",
         textDecoration: "line-through",
         lineHeight: 1.3
       }
     }, t.name), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
-        color: "rgba(255,255,255,0.55)"
+        color: "rgba(255,255,255,0.8)"
       }
     }, t.completedAt ? new Date(t.completedAt).toLocaleDateString("en-US", {
       month: "short",
@@ -3057,7 +3024,7 @@ function TasksView({
     }, c.l), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 11,
-        color: "rgba(255,255,255,0.4)",
+        color: "#fff",
         fontWeight: 500
       }
     }, ct.length));
@@ -3065,7 +3032,7 @@ function TasksView({
     style: {
       textAlign: "center",
       padding: "1rem",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 12
     }
   }, "No active tasks.")))));
@@ -3091,7 +3058,7 @@ function PainView({
   }, "Pain Log"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 18
     }
   }, "Track daily pain levels over time"), /*#__PURE__*/React.createElement("div", {
@@ -3151,7 +3118,7 @@ function PainView({
     style: {
       textAlign: "center",
       padding: "1.5rem",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 13
     }
   }, "No entries yet.") : [...painLog].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12).map(e => /*#__PURE__*/React.createElement("div", {
@@ -3211,7 +3178,7 @@ function PainView({
   }, e.level, "/10"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       width: 95
     }
   }, PL[e.level])))));
@@ -3275,13 +3242,13 @@ function AddEvForm({
     padding: "6px 10px",
     fontSize: 13,
     color: "rgba(255,255,255,0.95)",
-    background: "rgba(7,11,20,0.55)",
+    background: "rgba(7,11,20,0.72)",
     fontFamily: "var(--font-sans)",
     outline: "none"
   };
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       borderRadius: 14,
       border: "0.5px solid rgba(255,255,255,0.05)",
       padding: 16,
@@ -3321,7 +3288,7 @@ function AddEvForm({
     style: {
       fontSize: 10,
       fontFamily: "var(--font-display)",
-      color: "rgba(255,255,255,0.5)",
+      color: "rgba(255,255,255,0.78)",
       marginBottom: 3,
       fontWeight: 500,
       textTransform: "uppercase",
@@ -3380,7 +3347,7 @@ function AddEvForm({
       borderRadius: 8,
       padding: "5px 13px",
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       cursor: "pointer"
     }
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
@@ -3415,7 +3382,7 @@ function EvModal({
     onClick: onClose
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      background: "rgba(7,11,20,0.55)",
+      background: "rgba(7,11,20,0.72)",
       borderRadius: 14,
       padding: 20,
       minWidth: 260,
@@ -3444,7 +3411,7 @@ function EvModal({
       border: "none",
       fontSize: 20,
       cursor: "pointer",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       lineHeight: 1,
       padding: 0,
       marginLeft: 8
@@ -3467,12 +3434,12 @@ function EvModal({
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, ev.date, " \xB7 ", ev.startTime, "\u2013", ev.endTime)), ev.notes && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 12,
       lineHeight: 1.5,
       padding: "8px 10px",
@@ -3585,7 +3552,7 @@ function CalView({
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.4 }
     },
       React.createElement("span", { style: { marginRight: 3 } }, badge.icon),
-      !mini && ev.startTime && ev.startTime !== "all-day" && React.createElement("span", { style: { color: "rgba(255,255,255,0.45)", marginRight: 4, fontSize: 11, fontFamily: "var(--font-mono)" } }, ev.startTime),
+      !mini && ev.startTime && ev.startTime !== "all-day" && React.createElement("span", { style: { color: "rgba(255,255,255,0.7)", marginRight: 4, fontSize: 11, fontFamily: "var(--font-mono)" } }, ev.startTime),
       React.createElement("span", { style: { fontWeight: 500, color: "rgba(255,255,255,0.85)" } }, ev.title)
     );
   };
@@ -3593,7 +3560,7 @@ function CalView({
   var wDays = weekDays();
 
   // ── HEADER ──
-  var header = React.createElement("div", { style: { padding: "13px 18px", background: "rgba(7,11,20,0.55)", borderBottom: "0.5px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 } },
+  var header = React.createElement("div", { style: { padding: "13px 18px", background: "rgba(7,11,20,0.72)", borderBottom: "0.5px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 } },
     React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "center" } },
       React.createElement("span", { style: { fontSize: 19, fontWeight: 600, color: "rgba(255,255,255,0.9)", fontFamily: "var(--font-display)" } }, "Calendar"),
       React.createElement("div", { style: { display: "flex", gap: 3 } },
@@ -3604,7 +3571,7 @@ function CalView({
     ),
     React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
       // Source legend
-      React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", fontSize: 11, color: "rgba(255,255,255,0.45)" } },
+      React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", fontSize: 11, color: "rgba(255,255,255,0.7)" } },
         Object.entries(SRC_BADGE).map(function(entry) {
           var k = entry[0], v = entry[1];
           return React.createElement("span", { key: k, style: { display: "inline-flex", alignItems: "center", gap: 3 } },
@@ -3622,35 +3589,35 @@ function CalView({
 
   // ── NAV BAR ──
   var navBar = React.createElement("div", { style: { padding: "10px 18px", display: "flex", gap: 10, alignItems: "center" } },
-    React.createElement("button", { onClick: function() { nav(-1); }, style: { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "4px 10px", fontSize: 14, cursor: "pointer", color: "rgba(255,255,255,0.6)" } }, "\u2039"),
-    React.createElement("button", { onClick: toToday, style: { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "4px 12px", fontSize: 12, cursor: "pointer", color: "rgba(255,255,255,0.6)" } }, "Today"),
-    React.createElement("button", { onClick: function() { nav(1); }, style: { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "4px 10px", fontSize: 14, cursor: "pointer", color: "rgba(255,255,255,0.6)" } }, "\u203A"),
+    React.createElement("button", { onClick: function() { nav(-1); }, style: { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "4px 10px", fontSize: 18, cursor: "pointer", color: "rgba(255,255,255,0.85)", fontWeight: 700 } }, "\u2039"),
+    React.createElement("button", { onClick: toToday, style: { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "4px 12px", fontSize: 12, cursor: "pointer", color: "rgba(255,255,255,0.6)" } }, "Focus"),
+    React.createElement("button", { onClick: function() { nav(1); }, style: { background: "rgba(255,255,255,0.04)", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "4px 10px", fontSize: 18, cursor: "pointer", color: "rgba(255,255,255,0.85)", fontWeight: 700 } }, "\u203A"),
     React.createElement("span", { style: { fontWeight: 600, fontSize: 16, color: "rgba(255,255,255,0.85)", fontFamily: "var(--font-display)" } }, mode === "month" ? monthName : (function() { var ws = getWeekStart(); var we = new Date(ws); we.setDate(we.getDate() + 6); return ws.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " – " + we.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); })())
   );
 
   // ── ADD EVENT MODAL ──
   var addModal = addSlot && React.createElement("div", { style: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }, onClick: function() { setAddSlot(null); } },
-    React.createElement("div", { onClick: function(e) { e.stopPropagation(); }, className: "glass-card", style: { width: 380, padding: 22 } },
+    React.createElement("div", { onClick: function(e) { e.stopPropagation(); }, className: "glass-card", style: { width: 380, maxWidth: "90vw", maxHeight: "85vh", overflowY: "auto", padding: 22 } },
       React.createElement("div", { style: { fontWeight: 600, fontSize: 15, marginBottom: 14, color: "rgba(255,255,255,0.9)", fontFamily: "var(--font-display)" } }, "New Event"),
-      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "TITLE"),
+      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "TITLE"),
       React.createElement("input", { value: addTitle, onChange: function(e) { setAddTitle(e.target.value); }, autoFocus: true, style: { marginBottom: 10 } }),
-      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "DATE"),
+      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "DATE"),
       React.createElement("input", { type: "date", value: addDate, onChange: function(e) { setAddDate(e.target.value); }, style: { marginBottom: 10 } }),
       React.createElement("div", { style: { display: "flex", gap: 8, marginBottom: 10 } },
         React.createElement("div", { style: { flex: 1 } },
-          React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "START"),
+          React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "START"),
           React.createElement("input", { type: "time", value: addStart, onChange: function(e) { setAddStart(e.target.value); } })
         ),
         React.createElement("div", { style: { flex: 1 } },
-          React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "END"),
+          React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "END"),
           React.createElement("input", { type: "time", value: addEnd, onChange: function(e) { setAddEnd(e.target.value); } })
         )
       ),
-      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "CATEGORY"),
+      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "CATEGORY"),
       React.createElement("select", { value: addCat, onChange: function(e) { setAddCat(e.target.value); }, style: { width: "100%", marginBottom: 10 } },
         CATS.map(function(c) { return React.createElement("option", { key: c.id, value: c.id }, c.l); })
       ),
-      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "NOTES"),
+      React.createElement("label", { style: { fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.7)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4, display: "block" } }, "NOTES"),
       React.createElement("textarea", { value: addNotes, onChange: function(e) { setAddNotes(e.target.value); }, rows: 2, style: { marginBottom: 14 } }),
       React.createElement("div", { style: { display: "flex", gap: 8 } },
         React.createElement("button", { onClick: doAdd, style: { flex: 1, background: B, color: "#fff", border: "none", fontWeight: 600, padding: "7px 0" } }, "Save"),
@@ -3661,10 +3628,10 @@ function CalView({
 
   // ── EVENT DETAIL MODAL ──
   var detailModal = selEv && React.createElement("div", { style: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }, onClick: function() { setSelEv(null); } },
-    React.createElement("div", { onClick: function(e) { e.stopPropagation(); }, className: "glass-card", style: { width: 380, padding: 22 } },
+    React.createElement("div", { onClick: function(e) { e.stopPropagation(); }, className: "glass-card", style: { width: 380, maxWidth: "90vw", maxHeight: "85vh", overflowY: "auto", padding: 22 } },
       React.createElement("div", { style: { fontWeight: 600, fontSize: 16, marginBottom: 6, color: "rgba(255,255,255,0.9)", fontFamily: "var(--font-display)" } }, selEv.title),
-      React.createElement("div", { style: { fontSize: 13, color: "rgba(255,255,255,0.55)", marginBottom: 4 } }, selEv.date),
-      selEv.startTime && React.createElement("div", { style: { fontSize: 13, color: "rgba(255,255,255,0.55)", marginBottom: 4, fontFamily: "var(--font-mono)" } }, selEv.startTime + (selEv.endTime ? " – " + selEv.endTime : "")),
+      React.createElement("div", { style: { fontSize: 13, color: "rgba(255,255,255,0.8)", marginBottom: 4 } }, selEv.date),
+      selEv.startTime && React.createElement("div", { style: { fontSize: 13, color: "rgba(255,255,255,0.8)", marginBottom: 4, fontFamily: "var(--font-mono)" } }, selEv.startTime + (selEv.endTime ? " – " + selEv.endTime : "")),
       selEv.notes && React.createElement("div", { style: { fontSize: 13, color: "rgba(255,255,255,0.7)", marginTop: 8, lineHeight: 1.5 } }, selEv.notes),
       selEv.source === "local" && React.createElement("div", { style: { marginTop: 14, display: "flex", gap: 8 } },
         React.createElement("button", { onClick: function() { onDelEv(selEv.id); setSelEv(null); }, style: { background: "rgba(239,68,68,0.15)", color: "#fca5a5", border: "0.5px solid rgba(239,68,68,0.2)", padding: "6px 14px", fontSize: 12 } }, "Delete"),
@@ -3677,29 +3644,29 @@ function CalView({
   var monthView = React.createElement("div", { style: { padding: "0 18px 18px" } },
     React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1, textAlign: "center", marginBottom: 4 } },
       ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(function(d) {
-        return React.createElement("div", { key: d, style: { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.35)", padding: "6px 0", fontFamily: "var(--font-mono)" } }, d);
+        return React.createElement("div", { key: d, style: { fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.75)", padding: "6px 0", fontFamily: "var(--font-mono)" } }, d);
       })
     ),
     React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1 } },
       Array.from({ length: firstDow(cur.y, cur.m) }, function(_, i) {
-        return React.createElement("div", { key: "e" + i, style: { minHeight: 80 } });
+        return React.createElement("div", { key: "e" + i, style: { minHeight: 120 } });
       }),
       Array.from({ length: daysInMonth(cur.y, cur.m) }, function(_, i) {
         var day = i + 1;
         var ds = cur.y + "-" + String(cur.m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
         var dayEvs = eventsForDate(ds);
         var isToday = ds === today;
-        return React.createElement("div", { key: day, onClick: function() { setAddSlot({ date: ds }); setAddDate(ds); }, style: { minHeight: 80, padding: 4, borderRadius: 6, border: isToday ? "1px solid rgba(16,185,129,0.3)" : "0.5px solid rgba(255,255,255,0.04)", background: isToday ? "rgba(16,185,129,0.06)" : "rgba(255,255,255,0.02)", cursor: "pointer" } },
-          React.createElement("div", { style: { fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? "#34d399" : "rgba(255,255,255,0.6)", marginBottom: 3, fontFamily: "var(--font-mono)" } }, day),
+        return React.createElement("div", { key: day, onClick: function() { setAddSlot({ date: ds }); setAddDate(ds); }, style: { minHeight: 120, padding: 4, borderRadius: 6, border: isToday ? "1px solid rgba(16,185,129,0.3)" : "0.5px solid rgba(255,255,255,0.04)", background: isToday ? "rgba(16,185,129,0.06)" : "rgba(255,255,255,0.02)", cursor: "pointer" } },
+          React.createElement("div", { style: { fontSize: 12, fontWeight: isToday ? 700 : 400, color: isToday ? "#fff" : "rgba(255,255,255,0.6)", marginBottom: 3, fontFamily: "var(--font-mono)" } }, day),
           dayEvs.slice(0, 3).map(function(ev) { return React.createElement(EvBadge, { key: ev.id || ev.title + ev.date, ev: ev, mini: true }); }),
-          dayEvs.length > 3 && React.createElement("div", { style: { fontSize: 9, color: "rgba(255,255,255,0.35)", marginTop: 2 } }, "+" + (dayEvs.length - 3) + " more")
+          dayEvs.length > 3 && React.createElement("div", { style: { fontSize: 9, color: "rgba(255,255,255,0.75)", marginTop: 2 } }, "+" + (dayEvs.length - 3) + " more")
         );
       })
     )
   );
 
   // ── WEEK VIEW ──
-  var HRS = Array.from({ length: 14 }, function(_, i) { return i + 7; });
+  var HRS = Array.from({ length: 16 }, function(_, i) { return i + 7; });
   var weekView = React.createElement("div", { style: { padding: "0 18px 18px", overflowX: "auto" } },
     React.createElement("div", { style: { display: "grid", gridTemplateColumns: "50px repeat(7,1fr)", minWidth: 700 } },
       React.createElement("div", null),
@@ -3707,13 +3674,13 @@ function CalView({
         var ds = d.toISOString().slice(0, 10);
         var isT = ds === today;
         return React.createElement("div", { key: ds, style: { textAlign: "center", padding: "6px 0", borderBottom: "0.5px solid rgba(255,255,255,0.05)" } },
-          React.createElement("div", { style: { fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: "var(--font-mono)" } }, d.toLocaleDateString("en-US", { weekday: "short" })),
+          React.createElement("div", { style: { fontSize: 10, color: "rgba(255,255,255,0.75)", fontFamily: "var(--font-mono)" } }, d.toLocaleDateString("en-US", { weekday: "short" })),
           React.createElement("div", { style: { fontSize: 16, fontWeight: isT ? 700 : 400, color: isT ? "#34d399" : "rgba(255,255,255,0.7)", width: 28, height: 28, borderRadius: 14, display: "inline-flex", alignItems: "center", justifyContent: "center", background: isT ? "rgba(16,185,129,0.15)" : "transparent", fontFamily: "var(--font-mono)" } }, d.getDate())
         );
       }),
       HRS.map(function(h) {
         return [
-          React.createElement("div", { key: "h" + h, style: { fontSize: 10, color: "rgba(255,255,255,0.3)", textAlign: "right", paddingRight: 6, paddingTop: 2, borderTop: "0.5px solid rgba(255,255,255,0.04)", fontFamily: "var(--font-mono)" } }, (h % 12 || 12) + (h < 12 ? "a" : "p"))
+          React.createElement("div", { key: "h" + h, style: { fontSize: 10, color: "rgba(255,255,255,0.75)", textAlign: "right", paddingRight: 6, paddingTop: 2, borderTop: "0.5px solid rgba(255,255,255,0.04)", fontFamily: "var(--font-mono)" } }, (h % 12 || 12) + (h < 12 ? "a" : "p"))
         ].concat(wDays.map(function(d) {
           var ds = d.toISOString().slice(0, 10);
           var hEvs = eventsForDate(ds).filter(function(e) { return e.startTime && parseInt(e.startTime) === h; });
@@ -3830,7 +3797,7 @@ function NotesView({
     });
   };
   const card = {
-    background: "rgba(7,11,20,0.55)",
+    background: "rgba(7,11,20,0.72)",
     border: "0.5px solid rgba(255,255,255,0.05)",
     borderRadius: 14,
     padding: 20
@@ -3884,7 +3851,7 @@ function NotesView({
   }, "Notes"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.4)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, today.toLocaleDateString("en-US", {
     weekday: "long",
@@ -4028,7 +3995,7 @@ function NotesView({
     style: {
       padding: 20,
       textAlign: "center",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 13
     }
   }, notes.length === 0 ? "No notes yet — click + New Note" : "No notes match filters"), filtered.map(n => /*#__PURE__*/React.createElement("div", {
@@ -4061,14 +4028,14 @@ function NotesView({
   }, n.title || "Untitled"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       whiteSpace: "nowrap",
       marginLeft: 8
     }
   }, fmtDate(n.updatedAt || n.createdAt))), n.body && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 6,
       overflow: "hidden",
       textOverflow: "ellipsis",
@@ -4097,7 +4064,7 @@ function NotesView({
   }), n.tags.length > 4 && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "+", n.tags.length - 4)))))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4120,7 +4087,7 @@ function NotesView({
   }, "\uD83D\uDCDD"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "Select a note or create a new one")) : /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4145,13 +4112,13 @@ function NotesView({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 500
     }
   }, "created:"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       background: "rgba(255,255,255,0.04)",
       padding: "2px 8px",
       borderRadius: 6
@@ -4159,13 +4126,13 @@ function NotesView({
   }, fmtDateLong(selected.createdAt)), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 500
     }
   }, "modified:"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       background: "rgba(255,255,255,0.04)",
       padding: "2px 8px",
       borderRadius: 6
@@ -4173,7 +4140,7 @@ function NotesView({
   }, fmtDateLong(selected.updatedAt)), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 500
     }
   }, "project:"), /*#__PURE__*/React.createElement("select", {
@@ -4192,7 +4159,7 @@ function NotesView({
   }, p.name))), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 500
     }
   }, "area:"), /*#__PURE__*/React.createElement("select", {
@@ -4232,7 +4199,7 @@ function NotesView({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 500
     }
   }, "tags:"), (selected.tags || []).map(t => {
@@ -4535,7 +4502,7 @@ function FinanceView({
   });
   const fmtK = n => n >= 1000 ? "$" + (n / 1000).toFixed(1) + "k" : fmt(n);
   const card = {
-    background: "rgba(7,11,20,0.55)",
+    background: "rgba(7,11,20,0.72)",
     border: "0.5px solid rgba(255,255,255,0.05)",
     borderRadius: 14,
     padding: 20
@@ -4600,7 +4567,7 @@ function FinanceView({
           width: barW,
           height: Math.max(expH, 0),
           rx: 3,
-          fill: "#f97316",
+          fill: "#f5a623",
           opacity: 0.7
         }), /*#__PURE__*/React.createElement("text", {
           x: x,
@@ -4676,13 +4643,13 @@ function FinanceView({
   }, "Finance"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       marginTop: 2
     }
   }, "Read-only \u2014 synced from Dataverse")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.4)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, today.toLocaleDateString("en-US", {
     weekday: "long",
@@ -4720,7 +4687,7 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 4
     }
   }, dateFilter === "mtd" ? "MTD" : dateFilter === "qtd" ? "QTD" : "YTD", " Income"), /*#__PURE__*/React.createElement("div", {
@@ -4734,21 +4701,21 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 4
     }
   }, dateFilter === "mtd" ? "MTD" : dateFilter === "qtd" ? "QTD" : "YTD", " Expenses"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 22,
       fontWeight: 700,
-      color: "#f97316"
+      color: "#f5a623"
     }
   }, fmt(bankExpenses))), /*#__PURE__*/React.createElement("div", {
     style: kpiCard
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 4
     }
   }, "MTD Income"), /*#__PURE__*/React.createElement("div", {
@@ -4762,21 +4729,21 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 4
     }
   }, "MTD Expenses"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 22,
       fontWeight: 700,
-      color: "#f97316"
+      color: "#f5a623"
     }
   }, fmt(mtdExpenses)))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: kpiCard
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 4
     }
   }, dateFilter === "mtd" ? "MTD" : dateFilter === "qtd" ? "QTD" : "YTD", " Donations"), /*#__PURE__*/React.createElement("div", {
@@ -4790,7 +4757,7 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 4
     }
   }, "Donor Count"), /*#__PURE__*/React.createElement("div", {
@@ -4804,7 +4771,7 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 4
     }
   }, "Avg Gift"), /*#__PURE__*/React.createElement("div", {
@@ -4889,7 +4856,7 @@ function FinanceView({
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "to"), /*#__PURE__*/React.createElement("input", {
     type: "date",
@@ -4962,7 +4929,7 @@ function FinanceView({
       padding: "3px 10px",
       borderRadius: 999,
       fontSize: 11,
-      color: "#f97316",
+      color: "#f5a623",
       border: "0.5px solid #fed7aa",
       background: "rgba(249,115,34,0.1)",
       cursor: "pointer"
@@ -4980,7 +4947,7 @@ function FinanceView({
       alignItems: "center",
       gap: 4,
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4995,7 +4962,7 @@ function FinanceView({
       alignItems: "center",
       gap: 4,
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5045,7 +5012,7 @@ function FinanceView({
   }, c.name), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 2
     }
   }, "Income: ", /*#__PURE__*/React.createElement("span", {
@@ -5056,18 +5023,18 @@ function FinanceView({
   }, fmt(c.income))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       marginBottom: 2
     }
   }, "Expenses: ", /*#__PURE__*/React.createElement("span", {
     style: {
-      color: "#f97316",
+      color: "#f5a623",
       fontWeight: 600
     }
   }, fmt(c.expenses))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, c.count, " transactions"))))), tab === "donations" && topDonors.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5112,7 +5079,7 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, d.count, "x"), /*#__PURE__*/React.createElement("span", {
     style: {
@@ -5156,7 +5123,7 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, m.count, "x"), /*#__PURE__*/React.createElement("span", {
     style: {
@@ -5191,35 +5158,35 @@ function FinanceView({
     style: {
       textAlign: "left",
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 600
     }
   }, "Date"), tab === "banking" && /*#__PURE__*/React.createElement("th", {
     style: {
       textAlign: "left",
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 600
     }
   }, "Method"), tab === "donations" && /*#__PURE__*/React.createElement("th", {
     style: {
       textAlign: "left",
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 600
     }
   }, "Donor"), /*#__PURE__*/React.createElement("th", {
     style: {
       textAlign: "right",
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 600
     }
   }, "Amount"), /*#__PURE__*/React.createElement("th", {
     style: {
       textAlign: "left",
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.4)",
+      color: "rgba(255,255,255,0.75)",
       fontWeight: 600
     }
   }, "Notes"))), /*#__PURE__*/React.createElement("tbody", null, (tab === "banking" ? filteredBanking.sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 50) : filteredDonations.sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 50)).map((t, i) => /*#__PURE__*/React.createElement("tr", {
@@ -5230,7 +5197,7 @@ function FinanceView({
   }, /*#__PURE__*/React.createElement("td", {
     style: {
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       whiteSpace: "nowrap"
     }
   }, t.date ? new Date(t.date + "T00:00:00").toLocaleDateString("en-US", {
@@ -5246,12 +5213,12 @@ function FinanceView({
       borderRadius: 999,
       fontSize: 11,
       background: BANK_TX_COLORS[t.transaction_type_label] || "rgba(255,255,255,0.04)",
-      color: "rgba(255,255,255,0.25)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, t.transaction_type_label || "—")), tab === "donations" && /*#__PURE__*/React.createElement("td", {
     style: {
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.25)"
+      color: "rgba(255,255,255,0.75)"
     }
   }, t.donor_name || "Anonymous"), /*#__PURE__*/React.createElement("td", {
     style: {
@@ -5259,12 +5226,12 @@ function FinanceView({
       textAlign: "right",
       fontWeight: 600,
       fontVariantNumeric: "tabular-nums",
-      color: tab === "banking" ? Number(t.amount) >= 0 ? "#16a34a" : "#f97316" : "#10b981"
+      color: tab === "banking" ? Number(t.amount) >= 0 ? "#16a34a" : "#f5a623" : "#10b981"
     }
   }, Number(t.amount) < 0 ? "-" : "", fmt(t.amount)), /*#__PURE__*/React.createElement("td", {
     style: {
       padding: "6px 8px",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       maxWidth: 200,
       overflow: "hidden",
       textOverflow: "ellipsis",
@@ -5274,7 +5241,7 @@ function FinanceView({
     style: {
       padding: 20,
       textAlign: "center",
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontSize: 13
     }
   }, "No data yet \u2014 waiting for Power Automate sync"))));
@@ -5326,10 +5293,10 @@ function AreasView({
     return /*#__PURE__*/React.createElement("div", {style:{background:"rgba(255,255,255,0.03)",minHeight:"100vh"}},
       /*#__PURE__*/React.createElement("div", {style:{padding:"14px 22px",background:"rgba(7,11,20,0.55)",borderBottom:"0.5px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}},
         /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:10,alignItems:"center"}},
-          /*#__PURE__*/React.createElement("button", {onClick:function(){setSelArea(null);setShowNewProj(false);},style:{background:"none",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"4px 12px",fontSize:12,color:"rgba(255,255,255,0.4)",cursor:"pointer"}}, "\u2190 Areas"),
+          /*#__PURE__*/React.createElement("button", {onClick:function(){setSelArea(null);setShowNewProj(false);},style:{background:"none",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"4px 12px",fontSize:12,color:"rgba(255,255,255,0.75)",cursor:"pointer"}}, "\u2190 Areas"),
           /*#__PURE__*/React.createElement("span", {style:{fontSize:19,fontWeight:500,color:"rgba(255,255,255,0.95)"}}, "Areas")
         ),
-        /*#__PURE__*/React.createElement("span", {style:{fontSize:13,color:"rgba(255,255,255,0.55)"}}, sd())
+        /*#__PURE__*/React.createElement("span", {style:{fontSize:13,color:"rgba(255,255,255,0.8)"}}, sd())
       ),
       /*#__PURE__*/React.createElement("div", {style:{background:"#facc15",padding:"20px 24px",borderBottom:"2px solid #eab308"}},
         /*#__PURE__*/React.createElement("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
@@ -5356,20 +5323,20 @@ function AreasView({
           /*#__PURE__*/React.createElement("span", {style:{fontSize:16,fontWeight:600,color:"rgba(255,255,255,0.95)"}}, "Projects (", areaProjects.length, ")"),
           /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:8,alignItems:"center"}},
             /*#__PURE__*/React.createElement("div", {style:{position:"relative"}},
-              /*#__PURE__*/React.createElement("select", {value:sortBy,onChange:function(e){setSortBy(e.target.value);},style:{appearance:"none",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"5px 22px 5px 10px",fontSize:12,color:"rgba(255,255,255,0.55)",background:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"var(--font-sans)"}},
+              /*#__PURE__*/React.createElement("select", {value:sortBy,onChange:function(e){setSortBy(e.target.value);},style:{appearance:"none",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"5px 22px 5px 10px",fontSize:12,color:"rgba(255,255,255,0.8)",background:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"var(--font-sans)"}},
                 /*#__PURE__*/React.createElement("option", {value:"name"}, "Sort: Name"),
                 /*#__PURE__*/React.createElement("option", {value:"status"}, "Sort: Status"),
                 /*#__PURE__*/React.createElement("option", {value:"priority"}, "Sort: Priority"),
                 /*#__PURE__*/React.createElement("option", {value:"due"}, "Sort: Due Date")
               ),
-              /*#__PURE__*/React.createElement("span", {style:{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"rgba(255,255,255,0.55)",pointerEvents:"none"}}, "\u25BE")
+              /*#__PURE__*/React.createElement("span", {style:{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"rgba(255,255,255,0.8)",pointerEvents:"none"}}, "\u25BE")
             ),
             /*#__PURE__*/React.createElement("div", {style:{position:"relative"}},
-              /*#__PURE__*/React.createElement("select", {value:filterPrio,onChange:function(e){setFilterPrio(e.target.value);},style:{appearance:"none",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"5px 22px 5px 10px",fontSize:12,color:"rgba(255,255,255,0.55)",background:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"var(--font-sans)"}},
+              /*#__PURE__*/React.createElement("select", {value:filterPrio,onChange:function(e){setFilterPrio(e.target.value);},style:{appearance:"none",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"5px 22px 5px 10px",fontSize:12,color:"rgba(255,255,255,0.8)",background:"rgba(255,255,255,0.03)",cursor:"pointer",fontFamily:"var(--font-sans)"}},
                 /*#__PURE__*/React.createElement("option", {value:"all"}, "All Priorities"),
                 PRIOS.map(function(p) { return /*#__PURE__*/React.createElement("option", {key:p.id,value:p.id}, p.l); })
               ),
-              /*#__PURE__*/React.createElement("span", {style:{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"rgba(255,255,255,0.55)",pointerEvents:"none"}}, "\u25BE")
+              /*#__PURE__*/React.createElement("span", {style:{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"rgba(255,255,255,0.8)",pointerEvents:"none"}}, "\u25BE")
             )
           )
         ),
@@ -5385,7 +5352,7 @@ function AreasView({
               ),
               /*#__PURE__*/React.createElement("tbody", null,
                 filteredProj.length === 0 ?
-                  /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {colSpan:7,style:{textAlign:"center",padding:"2.5rem",color:"rgba(255,255,255,0.55)",fontSize:13}}, "No projects in this area yet.")) :
+                  /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {colSpan:7,style:{textAlign:"center",padding:"2.5rem",color:"rgba(255,255,255,0.8)",fontSize:13}}, "No projects in this area yet.")) :
                   filteredProj.map(function(p) {
                     var ps2 = pst(p.status);
                     var pr2 = prio(p.priority);
@@ -5397,17 +5364,17 @@ function AreasView({
                     },
                       /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px"}},
                         /*#__PURE__*/React.createElement("div", {style:{fontSize:13,fontWeight:600,color:B}}, p.name),
-                        /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"rgba(255,255,255,0.4)"}}, ps2.l)
+                        /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"rgba(255,255,255,0.75)"}}, ps2.l)
                       ),
                       /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px"}}, /*#__PURE__*/React.createElement(Pill, {bg:ps2.bg,fg:ps2.fg,xs:true}, ps2.l)),
                       /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px"}},
                         /*#__PURE__*/React.createElement("span", {style:{fontSize:16,fontWeight:700,color:open2>0?B:"#94a3b8"}}, open2),
-                        /*#__PURE__*/React.createElement("span", {style:{fontSize:12,color:"rgba(255,255,255,0.55)"}}, "/", total)
+                        /*#__PURE__*/React.createElement("span", {style:{fontSize:12,color:"rgba(255,255,255,0.8)"}}, "/", total)
                       ),
                       /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px"}}, /*#__PURE__*/React.createElement(Pill, {bg:pr2.bg,fg:pr2.fg,xs:true}, pr2.l)),
-                      /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px",fontSize:12,color:"rgba(255,255,255,0.4)"}}, fmt(p.startDate)),
-                      /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px",fontSize:12,color:"rgba(255,255,255,0.4)"}}, fmt(p.dueDate)),
-                      /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px",fontSize:12,color:"rgba(255,255,255,0.4)"}}, p.closedDate ? fmt(p.closedDate) : "\u2014")
+                      /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px",fontSize:12,color:"rgba(255,255,255,0.75)"}}, fmt(p.startDate)),
+                      /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px",fontSize:12,color:"rgba(255,255,255,0.75)"}}, fmt(p.dueDate)),
+                      /*#__PURE__*/React.createElement("td", {style:{padding:"11px 12px",fontSize:12,color:"rgba(255,255,255,0.75)"}}, p.closedDate ? fmt(p.closedDate) : "\u2014")
                     );
                   })
               )
@@ -5431,7 +5398,7 @@ function AreasView({
   return /*#__PURE__*/React.createElement("div", {style:{background:"rgba(255,255,255,0.03)",minHeight:"100vh"}},
     /*#__PURE__*/React.createElement("div", {style:{padding:"14px 22px",background:"rgba(7,11,20,0.55)",borderBottom:"0.5px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}},
       /*#__PURE__*/React.createElement("span", {style:{fontSize:19,fontWeight:500,color:"rgba(255,255,255,0.95)"}}, "Areas"),
-      /*#__PURE__*/React.createElement("span", {style:{fontSize:13,color:"rgba(255,255,255,0.55)"}}, sd())
+      /*#__PURE__*/React.createElement("span", {style:{fontSize:13,color:"rgba(255,255,255,0.8)"}}, sd())
     ),
     /*#__PURE__*/React.createElement("div", {style:{padding:"18px 20px"}},
       /*#__PURE__*/React.createElement("div", {style:{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:14}},
@@ -5449,19 +5416,19 @@ function AreasView({
               /*#__PURE__*/React.createElement(Pill, {bg:c2.bg,fg:c2.fg,xs:true}, aProj.length, " proj")
             ),
             desc2 && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"#78716c",marginBottom:8,lineHeight:1.4,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}, desc2),
-            !desc2 && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"rgba(255,255,255,0.2)",marginBottom:8,fontStyle:"italic"}}, "No description"),
+            !desc2 && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"rgba(255,255,255,0.7)",marginBottom:8,fontStyle:"italic"}}, "No description"),
             openP.length > 0 && /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
-              /*#__PURE__*/React.createElement("div", {style:{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}, "Projects:"),
+              /*#__PURE__*/React.createElement("div", {style:{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.8)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}, "Projects:"),
               openP.slice(0, 4).map(function(p) {
                 var ps3 = pst(p.status);
                 return /*#__PURE__*/React.createElement("div", {key:p.id,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 0"}},
-                  /*#__PURE__*/React.createElement("span", {style:{fontSize:11,color:"rgba(255,255,255,0.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}, p.name),
+                  /*#__PURE__*/React.createElement("span", {style:{fontSize:11,color:"rgba(255,255,255,0.8)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}, p.name),
                   /*#__PURE__*/React.createElement(Pill, {bg:ps3.bg,fg:ps3.fg,xs:true}, ps3.l)
                 );
               }),
-              openP.length > 4 && /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:"rgba(255,255,255,0.55)",marginTop:2}}, "+", openP.length - 4, " more")
+              openP.length > 4 && /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:"rgba(255,255,255,0.8)",marginTop:2}}, "+", openP.length - 4, " more")
             ),
-            openP.length === 0 && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"rgba(255,255,255,0.2)",marginBottom:8}}, "No active projects"),
+            openP.length === 0 && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"rgba(255,255,255,0.7)",marginBottom:8}}, "No active projects"),
             /*#__PURE__*/React.createElement("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"0.5px solid #ede9d0",paddingTop:8,marginTop:4}},
               /*#__PURE__*/React.createElement("span", {style:{fontSize:11,color:"#78716c"}}, "Open Tasks"),
               /*#__PURE__*/React.createElement("span", {style:{fontSize:16,fontWeight:700,color:aTasks.length > 0 ? B : "rgba(255,255,255,0.1)",background:"rgba(7,11,20,0.55)",border:"0.5px solid rgba(255,255,255,0.05)",borderRadius:6,padding:"2px 8px",minWidth:28,textAlign:"center"}}, aTasks.length)
@@ -5497,7 +5464,7 @@ function PlaceView({
   }, label), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
-      color: "rgba(255,255,255,0.55)"
+      color: "rgba(255,255,255,0.8)"
     }
   }, "Coming soon"));
 }
@@ -5522,6 +5489,7 @@ function App() {
   const [areaDescs, setAreaDescs] = useState({});
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("home");
+  const [navOpen, setNavOpen] = useState({});
   const [energy, setEnergy] = useState("all");
   useEffect(() => {
     Promise.all([sGet('tasks'), sGet('projects'), sGet('pain_log'), sGet('calendar_events'), sGet('streak'), sGet('shelter_occupancy'), sGet('failed_flows'), sGet('finance_banking'), sGet('finance_donations'), sGet('notes'), sGet('area_descriptions'), fetchExternalCal()]).then(([tr, pr, plr, evr, sr, shr, ffr, fbr, fdr, ntr, adr, extCal]) => {
@@ -5653,7 +5621,7 @@ function App() {
       padding: "3rem",
       textAlign: "center",
       fontSize: 14,
-      color: "rgba(255,255,255,0.55)",
+      color: "rgba(255,255,255,0.8)",
       fontFamily: "var(--font-sans)"
     }
   }, "Loading control panel\u2026");
@@ -5700,101 +5668,65 @@ function App() {
   }, "SYSTEMHORIZON"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       marginTop: 3,
       letterSpacing: "0.14em",
       textTransform: "uppercase"
     }
-  }, "Davies Shelters")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 4
-    }
-  }, NAV.map(([l, id]) => /*#__PURE__*/React.createElement("button", {
-    key: id,
-    onClick: () => setView(id),
-    style: {
-      background: view === id ? "rgba(16,185,129,0.1)" : "rgba(255,255,255,0.03)",
-      color: view === id ? "#10b981" : "rgba(255,255,255,0.4)",
-      border: "0.5px solid " + (view === id ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.04)"),
-      borderRadius: 20,
-      padding: "6px 4px",
-      fontSize: 10,
-      fontWeight: view === id ? 500 : 400,
-      letterSpacing: "0.04em",
-      cursor: "pointer",
-      textAlign: "center",
-      lineHeight: 1.2
-    }
-  }, l)), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setView("projects"),
-    style: {
-      gridColumn: "span 2",
-      background: view === "projects" ? "rgba(16,185,129,0.1)" : "rgba(255,255,255,0.03)",
-      color: view === "projects" ? "#10b981" : "rgba(255,255,255,0.4)",
-      border: "none",
-      borderRadius: 20,
-      padding: "6px 4px",
-      fontSize: 10,
-      fontWeight: view === "projects" ? 600 : 500,
-      cursor: "pointer",
-      marginTop: 3
-    }
-  }, "PROJECTS")), activeProj.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12,
-      background: "rgba(7,11,20,0.55)",
-      borderRadius: 12,
-      padding: "10px 9px"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 8,
-      fontWeight: 700,
-      color: "rgba(255,255,255,0.2)",
-      letterSpacing: "0.2em",
-      fontFamily: "var(--font-display)",
-      textTransform: "uppercase",
-      marginBottom: 7
-    }
-  }, "Active Projects"), activeProj.slice(0, 4).map(p => {
-    const ps = pst(p.status);
-    return /*#__PURE__*/React.createElement("div", {
-      key: p.id,
-      onClick: () => setView("projects"),
-      style: {
-        padding: "4px 3px",
-        cursor: "pointer",
-        borderBottom: "0.5px solid rgba(255,255,255,0.04)",
-        marginBottom: 3
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 10,
-        color: "rgba(255,255,255,0.25)",
-        fontWeight: 400,
-        lineHeight: 1.3,
-        marginBottom: 2
-      }
-    }, p.name), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 9,
-        background: ps.bg,
-        color: ps.fg,
-        borderRadius: 10,
-        padding: "1px 5px",
-        fontWeight: 500
-      }
-    }, ps.l));
-  }), activeProj.length > 4 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "rgba(255,255,255,0.55)",
-      textAlign: "center",
-      marginTop: 3
-    }
-  }, "+", activeProj.length - 4, " more")), /*#__PURE__*/React.createElement("div", {
+  }, "Navigation")), /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 1 } },
+
+  /* ── Home ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("home"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "home" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "home" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "home" ? 600 : 400, cursor: "pointer", borderLeft: view === "home" ? "3px solid #10b981" : "3px solid transparent" } }, "Home"),
+
+  /* ── Calendar ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("calendar"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "calendar" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "calendar" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "calendar" ? 600 : 400, cursor: "pointer", borderLeft: view === "calendar" ? "3px solid #10b981" : "3px solid transparent" } }, "Calendar"),
+
+  /* ── Task Management section ── */
+  /*#__PURE__*/React.createElement("div", null,
+    /*#__PURE__*/React.createElement("button", { onClick: function() { setNavOpen(function(p) { return Object.assign({}, p, { tasks: !p.tasks }); }); }, style: { display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", background: (view === "tasks" || view === "projects" || view === "areas") ? "rgba(16,185,129,0.06)" : "transparent", color: (view === "tasks" || view === "projects" || view === "areas") ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: 500, cursor: "pointer", letterSpacing: "0.02em" } },
+      "Task Management",
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, transition: "transform 0.2s", transform: navOpen.tasks ? "rotate(180deg)" : "rotate(0deg)" } }, "▾")
+    ),
+    navOpen.tasks && /*#__PURE__*/React.createElement("div", { style: { paddingLeft: 14, display: "flex", flexDirection: "column", gap: 1, marginTop: 2 } },
+      [["Tasks","tasks"],["Projects","projects"],["Areas","areas"]].map(function(pair) {
+        var label = pair[0], id = pair[1];
+        return /*#__PURE__*/React.createElement("button", { key: id, onClick: function() { setView(id); }, style: { display: "block", width: "100%", textAlign: "left", background: view === id ? "rgba(16,185,129,0.1)" : "transparent", color: view === id ? "#34d399" : "rgba(255,255,255,0.7)", border: "none", borderRadius: 5, padding: "6px 10px", fontSize: 12, fontWeight: view === id ? 600 : 400, cursor: "pointer", borderLeft: view === id ? "2px solid #10b981" : "2px solid transparent" } }, label);
+      })
+    )
+  ),
+
+  /* ── Finance section ── */
+  /*#__PURE__*/React.createElement("div", null,
+    /*#__PURE__*/React.createElement("button", { onClick: function() { setNavOpen(function(p) { return Object.assign({}, p, { finance: !p.finance }); }); }, style: { display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", background: view === "finance" ? "rgba(16,185,129,0.06)" : "transparent", color: view === "finance" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: 500, cursor: "pointer", letterSpacing: "0.02em" } },
+      "Finance",
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 10, transition: "transform 0.2s", transform: navOpen.finance ? "rotate(180deg)" : "rotate(0deg)" } }, "▾")
+    ),
+    navOpen.finance && /*#__PURE__*/React.createElement("div", { style: { paddingLeft: 14, display: "flex", flexDirection: "column", gap: 1, marginTop: 2 } },
+      [["Banking","finance"],["Donations","finance"]].map(function(pair) {
+        var label = pair[0], id = pair[1];
+        return /*#__PURE__*/React.createElement("button", { key: label, onClick: function() { setView("finance"); }, style: { display: "block", width: "100%", textAlign: "left", background: "transparent", color: view === "finance" ? "rgba(52,211,153,0.7)" : "rgba(255,255,255,0.7)", border: "none", borderRadius: 5, padding: "6px 10px", fontSize: 12, fontWeight: 400, cursor: "pointer", borderLeft: "2px solid transparent" } }, label);
+      })
+    )
+  )
+),
+  /* ── Reports ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("reports"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "reports" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "reports" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "reports" ? 600 : 400, cursor: "pointer", borderLeft: view === "reports" ? "3px solid #10b981" : "3px solid transparent" } }, "Reports"),
+
+  /* ── Shelter ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("shelter"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "shelter" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "shelter" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "shelter" ? 600 : 400, cursor: "pointer", borderLeft: view === "shelter" ? "3px solid #10b981" : "3px solid transparent" } }, "Shelter"),
+
+  /* ── Marketing ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("marketing"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "marketing" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "marketing" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "marketing" ? 600 : 400, cursor: "pointer", borderLeft: view === "marketing" ? "3px solid #10b981" : "3px solid transparent" } }, "Marketing"),
+
+  /* ── History ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("history"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "history" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "history" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "history" ? 600 : 400, cursor: "pointer", borderLeft: view === "history" ? "3px solid #10b981" : "3px solid transparent" } }, "History"),
+
+  /* ── BioStatus ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("pain"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "pain" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "pain" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "pain" ? 600 : 400, cursor: "pointer", borderLeft: view === "pain" ? "3px solid #10b981" : "3px solid transparent" } }, "BioStatus"),
+
+  /* ── Notes ── */
+  /*#__PURE__*/React.createElement("button", { onClick: function() { setView("notes"); }, style: { display: "block", width: "100%", textAlign: "left", background: view === "notes" ? "rgba(16,185,129,0.1)" : "transparent", color: view === "notes" ? "#34d399" : "rgba(255,255,255,0.8)", border: "none", borderRadius: 6, padding: "8px 10px", fontSize: 13, fontWeight: view === "notes" ? 600 : 400, cursor: "pointer", borderLeft: view === "notes" ? "3px solid #10b981" : "3px solid transparent" } }, "Notes")
+), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       minHeight: 10
@@ -5808,7 +5740,7 @@ function App() {
     style: {
       fontSize: 8,
       fontWeight: 700,
-      color: "rgba(255,255,255,0.15)",
+      color: "rgba(255,255,255,0.55)",
       letterSpacing: "0.2em",
       textTransform: "uppercase",
       marginBottom: 6,
@@ -5823,15 +5755,15 @@ function App() {
     style: {
       display: "block",
       fontSize: 10,
-      color: "rgba(255,255,255,0.25)",
+      color: "rgba(255,255,255,0.75)",
       padding: "4px 5px",
       cursor: "pointer",
       textDecoration: "none",
       borderRadius: 4
     },
-    onMouseEnter: e => e.currentTarget.style.color = "rgba(16,185,129,0.8)",
-    onMouseLeave: e => e.currentTarget.style.color = "rgba(255,255,255,0.25)"
-  }, q.l, " \u2197")))), /*#__PURE__*/React.createElement("div", {
+    onMouseEnter: e => e.currentTarget.style.color = "#34d399",
+    onMouseLeave: e => e.currentTarget.style.color = "rgba(255,255,255,0.65)"
+  }, q.l, " \u2197"))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflow: "auto",
@@ -5903,6 +5835,7 @@ function App() {
 }
 
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-</script>
+
+  </script>
 </body>
 </html>
